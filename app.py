@@ -778,39 +778,69 @@ def get_single_recipe():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-def clean_unit(quantity, unit):
-    # Convert float to int if it's a whole number
-    if isinstance(quantity, (int, float)):
-        if quantity.is_integer():
-            quantity = int(quantity)
-    
-    # Clean up unit names
-    unit_mapping = {
-        'pcs': 'piece',
-        'pc': 'piece',
-        'pieces': 'piece',
-        'g': 'grams',
-        'ml': 'milliliters',
-        'l': 'liters',
-        'oz': 'ounces',
-        'lb': 'pounds',
-        'tsp': 'teaspoon',
-        'tbsp': 'tablespoon',
-        'cup': 'cups',
-    }
-    
-    # Handle pluralization
-    if unit.lower() in unit_mapping:
-        base_unit = unit_mapping[unit.lower()]
-        if quantity == 1:
-            return f"{quantity} {base_unit}"
-        else:
-            # Handle special cases
-            if base_unit == 'piece':
-                return f"{quantity} pieces"
-            return f"{quantity} {base_unit}s"
-    
-    return f"{quantity} {unit}"
+def clean_unit(unit, quantity=None):
+    """Clean and validate unit value."""
+    try:
+        # If quantity is provided, use the two-parameter version
+        if quantity is not None:
+            # Convert float to int if it's a whole number
+            if isinstance(quantity, (int, float)):
+                if quantity.is_integer():
+                    quantity = int(quantity)
+            
+            # Clean up unit names
+            unit_mapping = {
+                'pcs': 'piece',
+                'pc': 'piece',
+                'pieces': 'piece',
+                'g': 'grams',
+                'ml': 'milliliters',
+                'l': 'liters',
+                'oz': 'ounces',
+                'lb': 'pounds',
+                'tsp': 'teaspoon',
+                'tbsp': 'tablespoon',
+                'cup': 'cups',
+            }
+            
+            # Handle pluralization
+            if unit.lower() in unit_mapping:
+                base_unit = unit_mapping[unit.lower()]
+                if quantity == 1:
+                    return f"{quantity} {base_unit}"
+                else:
+                    # Handle special cases
+                    if base_unit == 'piece':
+                        return f"{quantity} pieces"
+                    return f"{quantity} {base_unit}s"
+            
+            return f"{quantity} {unit}"
+        
+        # Single parameter version - just clean the unit
+        unit = unit.lower().strip()
+        if not unit:
+            return 'piece'  # Default unit
+            
+        # Clean up unit names
+        unit_mapping = {
+            'pcs': 'piece',
+            'pc': 'piece',
+            'pieces': 'piece',
+            'g': 'grams',
+            'ml': 'milliliters',
+            'l': 'liters',
+            'oz': 'ounces',
+            'lb': 'pounds',
+            'tsp': 'teaspoon',
+            'tbsp': 'tablespoon',
+            'cup': 'cups',
+        }
+        
+        return unit_mapping.get(unit, unit)
+        
+    except Exception as e:
+        app.logger.error(f"Error cleaning unit: {str(e)}")
+        return 'piece'  # Default unit on error
 
 def parse_recipe_suggestions(response_text):
     recipes = []
