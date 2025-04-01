@@ -415,59 +415,103 @@ def dashboard():
     receipts = list(mongo.db.receipts.find({"user_id": ObjectId(current_user.id)}).sort("upload_date", -1))
     return render_template('dashboard.html', inventory=inventory, receipts=receipts)
 
-@app.route('/upload_receipt', methods=['POST'])
+@app.route('/api/upload_receipt', methods=['POST'])
 @login_required
 def upload_receipt():
+    """Handle receipt upload and processing."""
+    print("Starting receipt upload process...")
+    
+    if 'receipt' not in request.files:
+        print("Error: No receipt file in request")
+        return jsonify({'error': 'No file uploaded'}), 400
+    
+    file = request.files['receipt']
+    if file.filename == '':
+        print("Error: Empty filename")
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not allowed_file(file.filename):
+        print(f"Error: Invalid file type for {file.filename}")
+        return jsonify({'error': 'Invalid file type'}), 400
+    
     try:
-        if 'file' not in request.files:
-            return jsonify({'success': False, 'error': 'No file uploaded'}), 400
-        
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'success': False, 'error': 'No file selected'}), 400
-        
-        if not allowed_file(file.filename):
-            return jsonify({'success': False, 'error': 'Invalid file type. Please upload an image file.'}), 400
-        
-        # Save the file
+        # Create a unique filename
         filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        unique_filename = f"{timestamp}_{filename}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+        
+        print(f"Saving file to {filepath}")
         file.save(filepath)
         
-        # Process the receipt image
+        print("Processing receipt with OCR...")
+        # Process the receipt
         try:
-            items = process_receipt(filepath)
+            # Extract text from image using OCR
+            image = Image.open(filepath)
+            text = pytesseract.image_to_string(image)
+            print(f"OCR Result: {text[:200]}...")  # Print first 200 chars of OCR result
             
-            # Save items to inventory
-            for item in items:
-                inventory_item = {
-                    'name': item['name'],
-                    'quantity': item['quantity'],
-                    'unit': item['unit'],
-                    'user_id': ObjectId(current_user.id),
-                    'date_added': datetime.utcnow()
-                }
-                mongo.db.inventory.insert_one(inventory_item)
+            # Process the extracted text
+            items = []
+            lines = text.split('\n')
             
-            # Clean up the uploaded file
-            os.remove(filepath)
+            print("Analyzing receipt lines...")
+            for line in lines:
+                if not line.strip() or should_ignore_line(line):
+                    continue
+                
+                # Clean and process the line
+                item_name = clean_item_name(line)
+                if not item_name:
+                    continue
+                
+                quantity = extract_quantity(line)
+                unit = identify_unit(line)
+                category = identify_category(item_name)
+                
+                print(f"Found item: {item_name} ({quantity} {unit}) - Category: {category}")
+                
+                # Add to MongoDB
+                try:
+                    mongo.db.inventory.insert_one({
+                        'user_id': current_user.id,
+                        'name': item_name,
+                        'quantity': quantity,
+                        'unit': unit,
+                        'category': category,
+                        'date_added': datetime.utcnow()
+                    })
+                except Exception as db_error:
+                    print(f"Database error: {str(db_error)}")
+                    continue
+                
+                items.append({
+                    'name': item_name,
+                    'quantity': quantity,
+                    'unit': unit,
+                    'category': category
+                })
             
-            return jsonify({
-                'success': True,
-                'message': f'Successfully added {len(items)} items to inventory',
-                'items': items
-            })
+            print(f"Successfully processed {len(items)} items")
+            return jsonify({'success': True, 'items': items}), 200
             
-        except Exception as e:
-            # Clean up the uploaded file in case of error
+        except Exception as process_error:
+            print(f"Error processing receipt: {str(process_error)}")
+            return jsonify({'error': 'Failed to process receipt', 'details': str(process_error)}), 500
+            
+    except Exception as save_error:
+        print(f"Error saving file: {str(save_error)}")
+        return jsonify({'error': 'Failed to save file', 'details': str(save_error)}), 500
+    
+    finally:
+        # Clean up the uploaded file
+        try:
             if os.path.exists(filepath):
                 os.remove(filepath)
-            app.logger.error(f"Error processing receipt: {str(e)}")
-            return jsonify({'success': False, 'error': f'Error processing receipt: {str(e)}'}), 500
-            
-    except Exception as e:
-        app.logger.error(f"Error uploading receipt: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+                print(f"Cleaned up file: {filepath}")
+        except Exception as cleanup_error:
+            print(f"Error during cleanup: {str(cleanup_error)}")
 
 @app.route('/add_item', methods=['POST'])
 @login_required
@@ -770,12 +814,14 @@ def parse_recipe_suggestions(response_text):
 @login_required
 def delete_all_inventory():
     try:
-        # Delete all inventory items for the current user
-        mongo.db.inventory.delete_many({"user_id": ObjectId(current_user.id)})
-        return jsonify({"message": "All inventory items have been deleted"})
+        result = mongo.db.inventory.delete_many({"user_id": ObjectId(current_user.id)})
+        if result.deleted_count >= 0:
+            return jsonify({"message": f"Deleted {result.deleted_count} items"})
+        else:
+            return jsonify({"error": "Failed to delete inventory"}), 500
     except Exception as e:
         app.logger.error(f"Error deleting all inventory: {str(e)}")
-        return jsonify({"error": "Failed to delete inventory items"}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/add_test_items')
 @login_required
@@ -964,40 +1010,63 @@ def preferences():
                          user_cooking_methods=current_user.cooking_methods or [],
                          user_kitchen_tools=current_user.kitchen_tools or [])
 
-@app.route('/api/inventory', methods=['GET'])
+@app.route('/api/inventory', methods=['GET', 'POST'])
 @login_required
-def get_inventory():
-    try:
-        # Get all inventory items for the current user
-        items = list(mongo.db.inventory.find({"user_id": ObjectId(current_user.id)}))
-        
-        # Convert ObjectId to string for JSON serialization
-        for item in items:
-            item['_id'] = str(item['_id'])
-            item['user_id'] = str(item['user_id'])
-        
-        return jsonify({"items": items})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/inventory/<item_id>', methods=['DELETE'])
-@login_required
-def delete_inventory_item(item_id):
-    try:
-        # Verify the item belongs to the current user
-        item = mongo.db.inventory.find_one({
-            "_id": ObjectId(item_id),
-            "user_id": ObjectId(current_user.id)
-        })
-        
-        if not item:
-            return jsonify({"error": "Item not found"}), 404
+def inventory():
+    if request.method == 'GET':
+        try:
+            # Get user's inventory
+            items = list(mongo.db.inventory.find({"user_id": ObjectId(current_user.id)}))
+            # Convert ObjectId to string for JSON serialization
+            for item in items:
+                item['_id'] = str(item['_id'])
+                item['user_id'] = str(item['user_id'])
+                # Convert any datetime objects to string if they exist
+                if 'added_date' in item:
+                    item['added_date'] = item['added_date'].isoformat()
+            return jsonify({"items": items})
+        except Exception as e:
+            app.logger.error(f"Error getting inventory: {str(e)}")
+            return jsonify({"error": "Failed to get inventory"}), 500
+    
+    elif request.method == 'POST':
+        try:
+            data = request.json
+            if not all(k in data for k in ['name', 'quantity', 'unit']):
+                return jsonify({"error": "Missing required fields"}), 400
             
-        # Delete the item
-        mongo.db.inventory.delete_one({"_id": ObjectId(item_id)})
-        return jsonify({"message": "Item deleted successfully"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+            # Clean and validate the data
+            name = data['name'].strip()
+            quantity = float(data['quantity'])
+            unit = data['unit'].strip().lower()
+            
+            if not name or quantity <= 0:
+                return jsonify({"error": "Invalid item data"}), 400
+            
+            # Add the item to inventory
+            item = {
+                "user_id": ObjectId(current_user.id),
+                "name": name,
+                "quantity": quantity,
+                "unit": unit,
+                "added_date": datetime.utcnow()
+            }
+            
+            result = mongo.db.inventory.insert_one(item)
+            
+            if result.inserted_id:
+                return jsonify({
+                    "message": "Item added successfully",
+                    "item_id": str(result.inserted_id)
+                }), 201
+            else:
+                return jsonify({"error": "Failed to add item"}), 500
+                
+        except ValueError as e:
+            return jsonify({"error": "Invalid quantity value"}), 400
+        except Exception as e:
+            app.logger.error(f"Error adding item: {str(e)}")
+            return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/delete_all_users', methods=['GET'])
 def delete_all_users():
@@ -1050,6 +1119,169 @@ def analyze_receipt():
     except Exception as e:
         app.logger.error(f"Error analyzing receipt: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/suggested_recipes')
+@login_required
+def get_suggested_recipes():
+    try:
+        # Get user's inventory items
+        inventory = list(mongo.db.inventory.find({"user_id": ObjectId(current_user.id)}))
+        
+        # Format inventory items for the prompt
+        inventory_text = "\n".join([f"- {item['quantity']} {item['unit']} of {item['name']}" for item in inventory])
+        
+        # Create the prompt for recipe generation
+        response = client.responses.create(
+            model="gpt-4o",
+            input=[
+                {
+                    "role": "developer",
+                    "content": """You are a creative chef. Generate 3 diverse recipe suggestions based on the available ingredients.
+                    Each recipe should:
+                    1. Use at least 2-3 ingredients from the inventory
+                    2. Be realistic and practical to make
+                    3. Include a brief description
+                    4. List required ingredients (marking which ones are available in inventory)
+                    5. Include approximate cooking time
+                    
+                    Format each recipe in JSON as:
+                    {
+                        "name": "Recipe Name",
+                        "description": "Brief description",
+                        "cooking_time": "XX minutes",
+                        "ingredients": {
+                            "from_inventory": ["item1", "item2"],
+                            "additional_needed": ["item3", "item4"]
+                        }
+                    }
+                    
+                    Return an array of 3 recipe objects."""
+                },
+                {
+                    "role": "user",
+                    "content": f"Available ingredients:\n{inventory_text}"
+                }
+            ]
+        )
+        
+        # Parse the response
+        try:
+            # Clean up markdown formatting if present
+            clean_response = response.output_text.strip()
+            if clean_response.startswith("```"):
+                clean_response = clean_response.split("\n", 1)[1]  # Remove first line
+            if clean_response.endswith("```"):
+                clean_response = clean_response.rsplit("\n", 1)[0]  # Remove last line
+            if clean_response.startswith("json"):
+                clean_response = clean_response.split("\n", 1)[1]  # Remove json tag
+                
+            recipes = json.loads(clean_response)
+            return jsonify({"recipes": recipes})
+        except json.JSONDecodeError as e:
+            app.logger.error(f"Failed to parse recipe response: {response.output_text}")
+            app.logger.error(f"JSON decode error: {str(e)}")
+            return jsonify({"error": "Failed to generate recipes"}), 500
+            
+    except Exception as e:
+        app.logger.error(f"Error generating recipes: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/chat_recipes', methods=['POST'])
+@login_required
+def chat_recipes():
+    try:
+        query = request.json.get('query')
+        if not query:
+            return jsonify({"error": "No query provided"}), 400
+
+        # Get user's inventory
+        inventory = list(mongo.db.inventory.find({"user_id": ObjectId(current_user.id)}))
+        inventory_text = "\n".join([f"- {item['quantity']} {item['unit']} of {item['name']}" for item in inventory])
+
+        # Generate recipes based on query and inventory
+        response = client.responses.create(
+            model="gpt-4o",
+            input=[
+                {
+                    "role": "developer",
+                    "content": """You are a creative chef. Based on the user's query and available ingredients, generate 3 relevant recipe suggestions.
+                    Each recipe should:
+                    1. Match the user's request (time, dietary restrictions, etc.)
+                    2. Use available ingredients when possible
+                    3. Include detailed steps
+                    4. Be practical and realistic
+                    
+                    Format the response in JSON as:
+                    {
+                        "recipes": [
+                            {
+                                "name": "Recipe Name",
+                                "description": "Brief description",
+                                "cooking_time": "XX minutes",
+                                "ingredients": {
+                                    "from_inventory": ["item1", "item2"],
+                                    "additional_needed": ["item3", "item4"]
+                                },
+                                "steps": ["step1", "step2", "step3"]
+                            }
+                        ]
+                    }"""
+                },
+                {
+                    "role": "user",
+                    "content": f"Query: {query}\n\nAvailable ingredients:\n{inventory_text}"
+                }
+            ]
+        )
+
+        try:
+            # Clean up markdown formatting if present
+            clean_response = response.output_text.strip()
+            if clean_response.startswith("```"):
+                clean_response = clean_response.split("\n", 1)[1]  # Remove first line
+            if clean_response.endswith("```"):
+                clean_response = clean_response.rsplit("\n", 1)[0]  # Remove last line
+            if clean_response.startswith("json"):
+                clean_response = clean_response.split("\n", 1)[1]  # Remove json tag
+                
+            recipes = json.loads(clean_response)
+            return jsonify(recipes)
+        except json.JSONDecodeError as e:
+            app.logger.error(f"Failed to parse chat recipe response: {response.output_text}")
+            app.logger.error(f"JSON decode error: {str(e)}")
+            return jsonify({"error": "Failed to generate recipes"}), 500
+
+    except Exception as e:
+        app.logger.error(f"Error in chat recipes: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/inventory/<item_id>', methods=['DELETE'])
+@login_required
+def delete_inventory_item(item_id):
+    try:
+        # Verify the item belongs to the current user
+        item = mongo.db.inventory.find_one({
+            "_id": ObjectId(item_id),
+            "user_id": ObjectId(current_user.id)
+        })
+        
+        if not item:
+            return jsonify({"error": "Item not found"}), 404
+            
+        # Delete the item
+        result = mongo.db.inventory.delete_one({
+            "_id": ObjectId(item_id),
+            "user_id": ObjectId(current_user.id)
+        })
+        
+        if result.deleted_count > 0:
+            return jsonify({"message": "Item deleted successfully"})
+        else:
+            return jsonify({"error": "Failed to delete item"}), 500
+            
+    except Exception as e:
+        app.logger.error(f"Error deleting item: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == '__main__':
     print("Starting server...")
