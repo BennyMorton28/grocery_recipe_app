@@ -13,6 +13,7 @@ from openai import OpenAI
 import json
 from flask_pymongo import PyMongo
 from bson import ObjectId
+import base64
 
 # Common grocery item categories and their patterns
 GROCERY_CATEGORIES = {
@@ -274,58 +275,67 @@ def extract_price(text):
     price_match = re.search(r'\$?(\d+\.\d{2})', text)
     return float(price_match.group(1)) if price_match else 0.0
 
-def process_receipt(image_path):
-    """Process receipt image and extract items with improved recognition."""
-    # Extract text from image using OCR with improved settings
-    text = pytesseract.image_to_string(
-        Image.open(image_path),
-        config='--psm 6'  # Assume uniform block of text
-    )
-    
-    items = []
-    lines = text.split('\n')
-    
-    for line in lines:
-        line = line.strip()
-        if not line or len(line) < 3:  # Skip empty or very short lines
-            continue
+def process_receipt(filepath):
+    """Process a receipt image using OpenAI's vision capabilities"""
+    try:
+        # Function to encode the image
+        def encode_image(image_path):
+            with open(image_path, "rb") as image_file:
+                return base64.b64encode(image_file.read()).decode("utf-8")
+
+        # Get the base64 string
+        base64_image = encode_image(filepath)
+
+        response = client.responses.create(
+            model="gpt-4o",
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": "This is a grocery receipt. Please analyze it and extract all grocery items. For each item, provide these exact fields: name, quantity (as a number), unit (e.g., pcs, lbs, oz, etc.), and price (in dollars). Format your response as a JSON array. Ignore any non-grocery items, totals, taxes, etc."
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:image/jpeg;base64,{base64_image}",
+                            "detail": "high"
+                        }
+                    ]
+                }
+            ]
+        )
+
+        # Log the raw response for debugging
+        app.logger.info(f"Raw GPT-4o response:\n{response.output_text}")
+
+        # Parse the response text as JSON
+        try:
+            # Remove any markdown formatting if present
+            clean_response = response.output_text.strip()
+            if clean_response.startswith("```json"):
+                clean_response = clean_response[7:]
+            if clean_response.endswith("```"):
+                clean_response = clean_response[:-3]
             
-        # Skip non-item lines
-        if should_ignore_line(line):
-            continue
+            items = json.loads(clean_response)
+            # Ensure each item has the required fields
+            for item in items:
+                if not all(key in item for key in ['name', 'quantity', 'unit', 'price']):
+                    raise ValueError("Missing required fields in item")
+                # Convert quantity and price to float
+                item['quantity'] = float(item['quantity'])
+                item['price'] = float(item['price'])
+                # Ensure unit is a string
+                item['unit'] = str(item['unit'] or 'pcs').lower()
+            return items
+        except json.JSONDecodeError as e:
+            app.logger.error(f"Failed to parse JSON response: {response.output_text}")
+            raise Exception("Failed to parse receipt items from response")
         
-        # Try to extract product name
-        item_name = clean_item_name(line)
-        if not item_name:
-            continue
-            
-        # Skip if the cleaned name is too short or looks like metadata
-        if len(item_name) < 3 or item_name.isnumeric():
-            continue
-        
-        # Extract price
-        price = extract_price(line)
-        
-        # Extract quantity (default to 1 if not found)
-        quantity = extract_quantity(line) or 1.0
-        
-        # Determine unit based on item name and quantity
-        unit = identify_unit(line)
-        
-        # Identify category
-        category = identify_category(item_name)
-        
-        # Only add items that have been categorized (excluding 'other')
-        if category != 'other':
-            items.append({
-                'name': item_name.title(),  # Capitalize properly
-                'quantity': quantity,
-                'unit': unit,
-                'price': price,
-                'category': category
-            })
-    
-    return items
+    except Exception as e:
+        app.logger.error(f"Error processing receipt: {str(e)}")
+        raise Exception(f"Failed to process receipt: {str(e)}")
 
 # Routes
 @app.route('/')
@@ -762,11 +772,10 @@ def delete_all_inventory():
     try:
         # Delete all inventory items for the current user
         mongo.db.inventory.delete_many({"user_id": ObjectId(current_user.id)})
-        flash('All inventory items have been deleted.', 'success')
+        return jsonify({"message": "All inventory items have been deleted"})
     except Exception as e:
-        flash('Error deleting inventory items.', 'error')
-    
-    return redirect(url_for('dashboard'))
+        app.logger.error(f"Error deleting all inventory: {str(e)}")
+        return jsonify({"error": "Failed to delete inventory items"}), 500
 
 @app.route('/add_test_items')
 @login_required
@@ -998,6 +1007,49 @@ def delete_all_users():
     except Exception as e:
         flash(f'Error deleting users: {str(e)}', 'error')
     return redirect(url_for('register'))
+
+@app.route('/api/analyze-receipt', methods=['POST'])
+@login_required
+def analyze_receipt():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+        
+        if not allowed_file(file.filename):
+            return jsonify({'success': False, 'error': 'Invalid file type. Please upload an image file.'}), 400
+        
+        # Save the file temporarily
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        try:
+            # Process the receipt using our vision-based function
+            items = process_receipt(filepath)
+            
+            # Clean up the uploaded file
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            
+            return jsonify({
+                'success': True,
+                'items': items
+            })
+            
+        except Exception as e:
+            # Clean up the uploaded file in case of error
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            app.logger.error(f"Error processing receipt: {str(e)}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+            
+    except Exception as e:
+        app.logger.error(f"Error analyzing receipt: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     print("Starting server...")
