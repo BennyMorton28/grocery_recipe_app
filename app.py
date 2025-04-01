@@ -275,6 +275,36 @@ def extract_price(text):
     price_match = re.search(r'\$?(\d+\.\d{2})', text)
     return float(price_match.group(1)) if price_match else 0.0
 
+def clean_quantity(quantity):
+    """Clean and validate quantity value."""
+    try:
+        # Convert to float if it's a string
+        if isinstance(quantity, str):
+            quantity = float(quantity)
+        
+        # Ensure it's a positive number
+        if quantity <= 0:
+            return 1.0  # Default to 1 if invalid
+            
+        return float(quantity)
+    except (ValueError, TypeError):
+        return 1.0  # Default to 1 if conversion fails
+
+def clean_price(price):
+    """Clean and validate price value."""
+    try:
+        # Convert to float if it's a string
+        if isinstance(price, str):
+            price = float(price)
+        
+        # Ensure it's a non-negative number
+        if price < 0:
+            return 0.0
+            
+        return float(price)
+    except (ValueError, TypeError):
+        return 0.0  # Default to 0 if conversion fails
+
 def process_receipt(receipt_path):
     """Process receipt image using OpenAI Vision API"""
     try:
@@ -325,7 +355,7 @@ def process_receipt(receipt_path):
                     # Clean and validate the item
                     cleaned_item = {
                         'name': clean_item_name(item.get('name', '')),
-                        'quantity': clean_quantity(item.get('quantity', 0)),
+                        'quantity': clean_quantity(item.get('quantity', 1)),
                         'unit': clean_unit(item.get('unit', '')),
                         'price': clean_price(item.get('price', 0))
                     }
