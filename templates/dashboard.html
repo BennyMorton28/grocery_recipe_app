@@ -1,0 +1,735 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Grocery Recipe App{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Recipe Suggestions Section - Now at the top -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h5 class="mb-0">Recipe Suggestions</h5>
+                    <button class="btn btn-primary btn-sm" onclick="refreshRecipes()">
+                        <i class="fas fa-sync-alt"></i> Refresh All
+                    </button>
+                </div>
+                <div class="card-body" id="recipeSuggestions">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Inventory Section - Now below recipes -->
+    <div class="row g-3">
+        <div class="col-12 col-md-6">
+            <!-- Inventory Card -->
+            <div class="card shadow mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h5 class="mb-0">My Inventory</h5>
+                    <div class="btn-group">
+                        <button class="btn btn-outline-primary btn-sm" onclick="toggleInventory(this)" title="Show/Hide Inventory">
+                            <i class="fas fa-chevron-down"></i>
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteAllInventory()">
+                            <i class="fas fa-trash"></i> Delete All
+                        </button>
+                        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addItemModal">
+                            <i class="fas fa-plus"></i> Add Item
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0 collapse" id="inventoryBody">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th>Qty</th>
+                                    <th>Unit</th>
+                                    <th>Expiry</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in inventory %}
+                                <tr>
+                                    <td>{{ item.name }}</td>
+                                    <td>{{ item.quantity }}</td>
+                                    <td>{{ item.unit }}</td>
+                                    <td>{{ item.expiry_date.strftime('%Y-%m-%d') if item.expiry_date else 'N/A' }}</td>
+                                    <td>
+                                        <button 
+                                            class="btn btn-danger btn-sm" 
+                                            onclick="deleteItem({{ item.id }})"
+                                            type="button"
+                                        >
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6">
+            <!-- Receipt Upload Card -->
+            <div class="card shadow mb-3">
+                <div class="card-header">
+                    <h5 class="mb-0">Add Receipt</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-primary" onclick="captureReceipt()">
+                            <i class="fas fa-camera"></i> Take Photo
+                        </button>
+                        <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#addReceiptModal">
+                            <i class="fas fa-upload"></i> Upload Photo
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Item Modal -->
+<div class="modal fade" id="addItemModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Inventory Item</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addItemForm">
+                    <div class="mb-3">
+                        <label class="form-label">Item Name</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-7">
+                            <label class="form-label">Quantity</label>
+                            <input type="number" class="form-control" name="quantity" step="0.01" required>
+                        </div>
+                        <div class="col-5">
+                            <label class="form-label">Unit</label>
+                            <select class="form-select" name="unit" required>
+                                <option value="pcs">Pieces</option>
+                                <option value="g">Grams</option>
+                                <option value="kg">Kilograms</option>
+                                <option value="ml">Milliliters</option>
+                                <option value="l">Liters</option>
+                                <option value="oz">Ounces</option>
+                                <option value="lb">Pounds</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Expiry Date (optional)</label>
+                        <input type="date" class="form-control" name="expiry_date">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="addItem()">Add Item</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Receipt Modal -->
+<div class="modal fade" id="addReceiptModal" tabindex="-1" aria-labelledby="addReceiptModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addReceiptModalLabel">Upload Receipt</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="receiptForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="receiptFile" class="form-label">Choose a photo:</label>
+                        <input type="file" class="form-control" id="receiptFile" name="file" accept="image/*" capture="environment">
+                    </div>
+                    <div id="previewContainer" class="mt-3 text-center d-none">
+                        <img id="receiptPreview" class="img-fluid rounded" style="max-height: 300px;">
+                    </div>
+                    <div class="d-grid mt-3">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-upload"></i> Upload Receipt
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Camera Modal -->
+<div class="modal fade" id="cameraModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Take Receipt Photo</h5>
+                <button type="button" class="btn-close" onclick="stopCamera()"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="position-relative">
+                    <video id="cameraPreview" autoplay playsinline class="w-100"></video>
+                    <canvas id="captureCanvas" class="d-none"></canvas>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="stopCamera()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="takePicture()">
+                    <i class="fas fa-camera"></i> Take Photo
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function createRecipeCard(recipe) {
+    const card = document.createElement('div');
+    card.className = 'card mb-3';
+    card.id = `recipe-${recipe.name.replace(/\s+/g, '-')}`;
+
+    const header = document.createElement('div');
+    header.className = 'card-header d-flex justify-content-between align-items-center flex-wrap gap-2';
+    
+    const title = document.createElement('h6');
+    title.className = 'mb-0 me-auto';
+    title.textContent = recipe.name;
+    
+    const buttonGroup = document.createElement('div');
+    buttonGroup.className = 'btn-group btn-group-sm';
+    buttonGroup.innerHTML = `
+        <button class="btn btn-outline-primary" onclick="toggleRecipe(this)" title="Show/Hide Details">
+            <i class="fas fa-chevron-down"></i>
+        </button>
+        <button class="btn btn-outline-success" onclick="likeRecipe('${recipe.name}')" title="Like Recipe">
+            <i class="fas fa-thumbs-up"></i>
+        </button>
+        <button class="btn btn-outline-danger" onclick="dislikeRecipe('${recipe.name}')" title="Dislike Recipe">
+            <i class="fas fa-thumbs-down"></i>
+        </button>
+        <button class="btn btn-outline-secondary" onclick="refreshRecipe('${recipe.name}')" title="Refresh Recipe">
+            <i class="fas fa-sync-alt"></i>
+        </button>
+        <button class="btn btn-outline-danger" onclick="removeRecipe(this.closest('.card'))" title="Remove Recipe">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+
+    header.appendChild(title);
+    header.appendChild(buttonGroup);
+
+    const body = document.createElement('div');
+    body.className = 'card-body collapse';
+    
+    // Preparation Time
+    const prepTime = document.createElement('p');
+    prepTime.className = 'mb-3';
+    prepTime.innerHTML = `<strong>Preparation Time:</strong> ${recipe.preparation_time}`;
+    
+    // Required Ingredients
+    const reqIngredients = document.createElement('div');
+    reqIngredients.className = 'mb-3';
+    reqIngredients.innerHTML = `
+        <h6 class="mb-2">Required Ingredients:</h6>
+        <ul class="list-unstyled mb-0">
+            ${recipe.required_ingredients.map(ing => `<li><i class="fas fa-check text-success me-2"></i>${ing}</li>`).join('')}
+        </ul>
+    `;
+    
+    // Additional Ingredients
+    const addIngredients = document.createElement('div');
+    addIngredients.className = 'mb-3';
+    addIngredients.innerHTML = `
+        <h6 class="mb-2">Additional Ingredients:</h6>
+        <ul class="list-unstyled mb-0">
+            ${recipe.additional_ingredients.map(ing => `<li><i class="fas fa-plus text-primary me-2"></i>${ing}</li>`).join('')}
+        </ul>
+    `;
+    
+    // Instructions
+    const instructions = document.createElement('div');
+    instructions.innerHTML = `
+        <h6 class="mb-2">Instructions:</h6>
+        <ol class="ps-3 mb-0">
+            ${recipe.instructions.map(step => `<li class="mb-2">${step.replace(/^\d+\.\s*/, '')}</li>`).join('')}
+        </ol>
+    `;
+    
+    body.appendChild(prepTime);
+    body.appendChild(reqIngredients);
+    body.appendChild(addIngredients);
+    body.appendChild(instructions);
+    
+    card.appendChild(header);
+    card.appendChild(body);
+    
+    return card;
+}
+
+function toggleRecipe(button) {
+    const body = button.closest('.card').querySelector('.card-body');
+    const icon = button.querySelector('i');
+    if (body.classList.contains('show')) {
+        body.classList.remove('show');
+        icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+    } else {
+        body.classList.add('show');
+        icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+    }
+}
+
+function removeRecipe(card) {
+    card.remove();
+}
+
+async function fetchNewRecipe() {
+    try {
+        const response = await fetch('/get_single_recipe', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        if (data.error) {
+            console.error('Error fetching new recipe:', data.error);
+            return;
+        }
+        
+        if (data.recipe) {
+            const container = document.getElementById('recipeSuggestions');
+            container.appendChild(createRecipeCard(data.recipe));
+        }
+    } catch (error) {
+        console.error('Error fetching new recipe:', error);
+    }
+}
+
+async function refreshRecipes() {
+    const container = document.getElementById('recipeSuggestions');
+    container.innerHTML = `
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    `;
+    
+    try {
+        // Get current filters from sessionStorage
+        const filters = sessionStorage.getItem('recipeFilters') || '{}';
+        
+        console.log('Fetching recipes with filters:', filters);
+        
+        const response = await fetch(`/get_recipes?filters=${encodeURIComponent(filters)}`);
+        const data = await response.json();
+        
+        console.log('Recipe API response:', data);
+        
+        if (data.error) {
+            container.innerHTML = `
+                <div class="alert alert-danger">
+                    Error loading recipe suggestions: ${data.error}
+                </div>
+            `;
+            console.error('Recipe API error:', data.error);
+            return;
+        }
+        
+        if (!data.recipes || data.recipes.length === 0) {
+            container.innerHTML = `
+                <div class="alert alert-info">
+                    No recipe suggestions available. Please check your inventory has enough ingredients for recipes.
+                </div>
+            `;
+            console.log('No recipes returned from API');
+            return;
+        }
+        
+        container.innerHTML = '';
+        data.recipes.forEach(recipe => {
+            container.appendChild(createRecipeCard(recipe));
+        });
+        
+    } catch (error) {
+        console.error('Recipe loading error:', error);
+        container.innerHTML = `
+            <div class="alert alert-danger">
+                Error loading recipe suggestions. Please check the browser console for details.
+            </div>
+        `;
+    }
+}
+
+async function refreshRecipe(recipeName) {
+    try {
+        const response = await fetch('/refresh_recipe', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ recipe_name: recipeName })
+        });
+        
+        const data = await response.json();
+        if (data.error) {
+            alert('Error refreshing recipe: ' + data.error);
+            return;
+        }
+        
+        const oldCard = document.getElementById(`recipe-${recipeName.replace(/\s+/g, '-')}`);
+        const newCard = createRecipeCard(data.recipe);
+        oldCard.replaceWith(newCard);
+        
+    } catch (error) {
+        alert('Error refreshing recipe: ' + error.message);
+    }
+}
+
+async function likeRecipe(recipeName) {
+    try {
+        await fetch('/rate_recipe', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                recipe_name: recipeName,
+                rating: true
+            })
+        });
+    } catch (error) {
+        alert('Error saving recipe rating: ' + error.message);
+    }
+}
+
+async function dislikeRecipe(recipeName) {
+    try {
+        await fetch('/rate_recipe', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                recipe_name: recipeName,
+                rating: false
+            })
+        });
+    } catch (error) {
+        alert('Error saving recipe rating: ' + error.message);
+    }
+}
+
+async function addItem() {
+    const form = document.getElementById('addItemForm');
+    const formData = new FormData(form);
+    const data = {
+        name: formData.get('name'),
+        quantity: parseFloat(formData.get('quantity')),
+        unit: formData.get('unit'),
+        expiry_date: formData.get('expiry_date') || null
+    };
+    
+    try {
+        const response = await fetch('/add_item', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Error adding item: ' + error.message);
+        }
+    } catch (error) {
+        alert('Error adding item: ' + error.message);
+    }
+}
+
+async function deleteItem(itemId) {
+    if (!confirm('Are you sure you want to delete this item?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/delete_item/${itemId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Error deleting item: ' + error.message);
+        }
+    } catch (error) {
+        alert('Error deleting item: ' + error.message);
+    }
+}
+
+function deleteAllInventory() {
+    if (confirm('Are you sure you want to delete all inventory items?')) {
+        fetch('/delete_all_inventory', {
+            method: 'POST'
+        }).then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Error deleting inventory items');
+            }
+        }).catch(error => {
+            alert('Error: ' + error.message);
+        });
+    }
+}
+
+// Load recipes when page loads
+document.addEventListener('DOMContentLoaded', refreshRecipes);
+
+// Add these new functions for camera handling
+async function captureReceipt() {
+    const cameraModal = new bootstrap.Modal(document.getElementById('cameraModal'));
+    
+    try {
+        // Check if mediaDevices is supported
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            // Legacy support for older browsers
+            const getUserMedia = navigator.getUserMedia ||
+                               navigator.webkitGetUserMedia ||
+                               navigator.mozGetUserMedia ||
+                               navigator.msGetUserMedia;
+            
+            if (!getUserMedia) {
+                throw new Error('Your browser does not support camera access. Please try using a modern browser like Chrome, Safari, or Firefox.');
+            }
+            
+            // Use the legacy API
+            getUserMedia.call(navigator, 
+                { video: { facingMode: 'environment' } },
+                (stream) => {
+                    const video = document.getElementById('cameraPreview');
+                    video.srcObject = stream;
+                    video.play();
+                    cameraModal.show();
+                },
+                (error) => {
+                    throw error;
+                }
+            );
+            return;
+        }
+        
+        // Modern browser support
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
+            }
+        });
+        
+        const video = document.getElementById('cameraPreview');
+        video.srcObject = stream;
+        
+        // Wait for video to be ready
+        await new Promise((resolve) => {
+            video.onloadedmetadata = () => {
+                video.play().catch(console.error);
+                resolve();
+            };
+        });
+        
+        cameraModal.show();
+        
+    } catch (error) {
+        console.error('Camera error:', error);
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+            alert('Please allow camera access when prompted by your browser. If you blocked the camera, please enable it in your browser settings and try again.');
+        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+            alert('No camera found. Please make sure your device has a camera and try again.');
+        } else if (error.name === 'NotSupportedError' || error.name === 'ConstraintNotSatisfiedError') {
+            alert('Your device or browser does not support camera access. Please try using a modern browser.');
+        } else {
+            alert('Error accessing camera: ' + (error.message || 'Please make sure you are using a secure connection (HTTPS) and your browser supports camera access.'));
+        }
+    }
+}
+
+function stopCamera() {
+    try {
+        const video = document.getElementById('cameraPreview');
+        if (video) {
+            if (video.srcObject) {
+                const tracks = video.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                video.srcObject = null;
+            }
+            video.pause();
+        }
+        
+        const modal = document.getElementById('cameraModal');
+        if (modal) {
+            const bsModal = bootstrap.Modal.getInstance(modal);
+            if (bsModal) {
+                bsModal.hide();
+            }
+        }
+    } catch (error) {
+        console.error('Error stopping camera:', error);
+    }
+}
+
+async function takePicture() {
+    const video = document.getElementById('cameraPreview');
+    const canvas = document.getElementById('captureCanvas');
+    
+    try {
+        // Ensure video is playing and has valid dimensions
+        if (!video || !video.videoWidth || !video.videoHeight) {
+            throw new Error('Camera not ready. Please wait for the camera to initialize.');
+        }
+        
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        
+        // Draw the current video frame
+        ctx.drawImage(video, 0, 0);
+        
+        // Convert to blob with lower quality for better performance
+        const imageBlob = await new Promise((resolve) => {
+            canvas.toBlob(resolve, 'image/jpeg', 0.8);
+        });
+        
+        if (!imageBlob) {
+            throw new Error('Failed to capture image. Please try again.');
+        }
+        
+        // Create a file from the blob
+        const imageFile = new File([imageBlob], 'receipt.jpg', { type: 'image/jpeg' });
+        
+        // Update preview
+        const preview = document.getElementById('receiptPreview');
+        const previewContainer = document.getElementById('previewContainer');
+        if (preview && previewContainer) {
+            preview.src = URL.createObjectURL(imageBlob);
+            previewContainer.classList.remove('d-none');
+        }
+        
+        // Update file input
+        const fileInput = document.getElementById('receiptFile');
+        if (fileInput) {
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(imageFile);
+            fileInput.files = dataTransfer.files;
+        }
+        
+        // Stop camera and switch modals
+        stopCamera();
+        
+        // Show upload modal
+        const uploadModal = new bootstrap.Modal(document.getElementById('addReceiptModal'));
+        uploadModal.show();
+        
+    } catch (error) {
+        console.error('Error capturing picture:', error);
+        alert(error.message || 'Failed to capture picture. Please try again.');
+    }
+}
+
+async function chooseFromLibrary() {
+    const input = document.getElementById('receiptFile');
+    input.click();
+}
+
+// Update the existing receipt form handler
+document.getElementById('receiptForm').onsubmit = async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const preview = document.getElementById('receiptPreview');
+    const previewContainer = document.getElementById('previewContainer');
+    
+    try {
+        const response = await fetch('/upload_receipt', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) throw new Error('Upload failed');
+        
+        const data = await response.json();
+        if (data.success) {
+            // Show preview if not already shown
+            if (formData.get('file').size > 0) {
+                preview.src = URL.createObjectURL(formData.get('file'));
+                previewContainer.classList.remove('d-none');
+            }
+            
+            // Close modal after successful upload
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addReceiptModal'));
+            modal.hide();
+            
+            // Refresh inventory
+            await refreshInventory();
+            
+            // Show success message
+            showAlert('Receipt uploaded successfully!', 'success');
+        } else {
+            throw new Error(data.error || 'Upload failed');
+        }
+    } catch (error) {
+        console.error('Error uploading receipt:', error);
+        showAlert('Failed to upload receipt: ' + error.message, 'danger');
+    }
+};
+
+// Add preview handler for file input
+document.getElementById('receiptFile').onchange = function(e) {
+    const preview = document.getElementById('receiptPreview');
+    const previewContainer = document.getElementById('previewContainer');
+    
+    if (this.files && this.files[0]) {
+        preview.src = URL.createObjectURL(this.files[0]);
+        previewContainer.classList.remove('d-none');
+    }
+};
+
+function toggleInventory(button) {
+    const body = document.getElementById('inventoryBody');
+    const icon = button.querySelector('i');
+    if (body.classList.contains('show')) {
+        body.classList.remove('show');
+        icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+    } else {
+        body.classList.add('show');
+        icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+    }
+}
+</script>
+{% endblock %} 

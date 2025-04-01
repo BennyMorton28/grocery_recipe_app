@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Register - Grocery Recipe App{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h4 class="mb-0">Register</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="email" name="email" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+
+                        <div class="mb-4">
+                            <h5>Cooking Methods</h5>
+                            <p class="text-muted">Select the cooking methods you have available:</p>
+                            <div class="row g-3">
+                                {% for method_id, method in cooking_methods.items() %}
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input type="checkbox" 
+                                               class="form-check-input" 
+                                               id="method_{{ method_id }}" 
+                                               name="cooking_methods" 
+                                               value="{{ method_id }}">
+                                        <label class="form-check-label" for="method_{{ method_id }}">
+                                            <i class="fas {{ method.icon }} me-2"></i>
+                                            {{ method.name }}
+                                        </label>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <h5>Kitchen Tools</h5>
+                            <p class="text-muted">Select the kitchen tools you have:</p>
+                            <div class="row g-3">
+                                {% for tool_id, tool in kitchen_tools.items() %}
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input type="checkbox" 
+                                               class="form-check-input" 
+                                               id="tool_{{ tool_id }}" 
+                                               name="kitchen_tools" 
+                                               value="{{ tool_id }}">
+                                        <label class="form-check-label" for="tool_{{ tool_id }}">
+                                            <i class="fas {{ tool.icon }} me-2"></i>
+                                            {{ tool.name }}
+                                        </label>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center">
+                            <a href="{{ url_for('login') }}" class="text-decoration-none">Already have an account? Login</a>
+                            <button type="submit" class="btn btn-primary">Register</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

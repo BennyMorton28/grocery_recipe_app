@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+
+{% block title %}Cooking Preferences - Grocery Recipe App{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <!-- Quick Filters Card -->
+            <div class="card shadow mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">Quick Filters</h4>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearFilters()">
+                        <i class="fas fa-times"></i> Clear Filters
+                    </button>
+                </div>
+                <div class="card-body">
+                    <form id="quickFiltersForm">
+                        <div class="row g-3">
+                            <!-- Time Constraint -->
+                            <div class="col-md-6">
+                                <label class="form-label">Time Constraint</label>
+                                <select class="form-select" id="timeConstraint" name="timeConstraint">
+                                    <option value="">No preference</option>
+                                    <option value="15">Under 15 minutes</option>
+                                    <option value="30">Under 30 minutes</option>
+                                    <option value="45">Under 45 minutes</option>
+                                    <option value="60">Under 1 hour</option>
+                                </select>
+                            </div>
+
+                            <!-- Preferred Cooking Method -->
+                            <div class="col-md-6">
+                                <label class="form-label">Preferred Cooking Method</label>
+                                <select class="form-select" id="preferredMethod" name="preferredMethod">
+                                    <option value="">No preference</option>
+                                    {% for method_id, method in cooking_methods.items() %}
+                                    <option value="{{ method_id }}">{{ method.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <!-- Must Use Ingredients -->
+                            <div class="col-12">
+                                <label class="form-label">Must Use Ingredients</label>
+                                <select class="form-select" id="mustUseIngredients" name="mustUseIngredients" multiple>
+                                    {% for item in inventory_items %}
+                                    <option value="{{ item.id }}">{{ item.name }} ({{ item.quantity }} {{ item.unit }})</option>
+                                    {% endfor %}
+                                </select>
+                                <small class="text-muted">Hold Ctrl/Cmd to select multiple items</small>
+                            </div>
+
+                            <!-- Dietary Preferences -->
+                            <div class="col-12">
+                                <label class="form-label">Dietary Preferences</label>
+                                <div class="row g-2">
+                                    <div class="col-auto">
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input" id="vegetarian" name="dietary" value="vegetarian">
+                                            <label class="form-check-label" for="vegetarian">Vegetarian</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input" id="vegan" name="dietary" value="vegan">
+                                            <label class="form-check-label" for="vegan">Vegan</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input" id="glutenFree" name="dietary" value="glutenFree">
+                                            <label class="form-check-label" for="glutenFree">Gluten-Free</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input" id="dairyFree" name="dietary" value="dairyFree">
+                                            <label class="form-check-label" for="dairyFree">Dairy-Free</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-filter"></i> Apply Filters
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Permanent Preferences Card -->
+            <div class="card shadow">
+                <div class="card-header">
+                    <h4 class="mb-0">Equipment & Tools</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="mb-4">
+                            <h5>Cooking Methods</h5>
+                            <p class="text-muted">Select the cooking methods you have available:</p>
+                            <div class="row g-3">
+                                {% for method_id, method in cooking_methods.items() %}
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input type="checkbox" 
+                                               class="form-check-input" 
+                                               id="method_{{ method_id }}" 
+                                               name="cooking_methods" 
+                                               value="{{ method_id }}"
+                                               {% if method_id in user_cooking_methods %}checked{% endif %}>
+                                        <label class="form-check-label" for="method_{{ method_id }}">
+                                            <i class="fas {{ method.icon }} me-2"></i>
+                                            {{ method.name }}
+                                        </label>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <h5>Kitchen Tools</h5>
+                            <p class="text-muted">Select the kitchen tools you have:</p>
+                            <div class="row g-3">
+                                {% for tool_id, tool in kitchen_tools.items() %}
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input type="checkbox" 
+                                               class="form-check-input" 
+                                               id="tool_{{ tool_id }}" 
+                                               name="kitchen_tools" 
+                                               value="{{ tool_id }}"
+                                               {% if tool_id in user_kitchen_tools %}checked{% endif %}>
+                                        <label class="form-check-label" for="tool_{{ tool_id }}">
+                                            <i class="fas {{ tool.icon }} me-2"></i>
+                                            {{ tool.name }}
+                                        </label>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">Back to Dashboard</a>
+                            <button type="submit" class="btn btn-primary">Save Equipment & Tools</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('quickFiltersForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const filters = {
+        timeConstraint: formData.get('timeConstraint'),
+        preferredMethod: formData.get('preferredMethod'),
+        mustUseIngredients: Array.from(document.getElementById('mustUseIngredients').selectedOptions).map(opt => opt.value),
+        dietary: Array.from(formData.getAll('dietary'))
+    };
+    
+    // Store filters in sessionStorage
+    sessionStorage.setItem('recipeFilters', JSON.stringify(filters));
+    
+    // Show success message
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-success alert-dismissible fade show';
+    alert.innerHTML = `
+        Filters applied successfully! Return to the dashboard to see filtered recipes.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    this.insertAdjacentElement('beforebegin', alert);
+});
+
+function clearFilters() {
+    // Clear form
+    document.getElementById('quickFiltersForm').reset();
+    // Clear sessionStorage
+    sessionStorage.removeItem('recipeFilters');
+    
+    // Show success message
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-info alert-dismissible fade show';
+    alert.innerHTML = `
+        Filters cleared successfully!
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.getElementById('quickFiltersForm').insertAdjacentElement('beforebegin', alert);
+}
+
+// Load saved filters on page load
+window.addEventListener('load', function() {
+    const savedFilters = sessionStorage.getItem('recipeFilters');
+    if (savedFilters) {
+        const filters = JSON.parse(savedFilters);
+        document.getElementById('timeConstraint').value = filters.timeConstraint || '';
+        document.getElementById('preferredMethod').value = filters.preferredMethod || '';
+        
+        // Set multiple select values
+        const mustUseSelect = document.getElementById('mustUseIngredients');
+        filters.mustUseIngredients.forEach(id => {
+            const option = mustUseSelect.querySelector(`option[value="${id}"]`);
+            if (option) option.selected = true;
+        });
+        
+        // Set dietary checkboxes
+        filters.dietary.forEach(value => {
+            const checkbox = document.querySelector(`input[name="dietary"][value="${value}"]`);
+            if (checkbox) checkbox.checked = true;
+        });
+    }
+});
+</script>
+{% endblock %} 
