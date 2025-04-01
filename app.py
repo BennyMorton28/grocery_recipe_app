@@ -286,33 +286,36 @@ def process_receipt(filepath):
         # Get the base64 string
         base64_image = encode_image(filepath)
 
-        response = client.responses.create(
-            model="gpt-4o",
-            input=[
+        # Call OpenAI API with vision capabilities
+        response = client.chat.completions.create(
+            model="gpt-4-vision-preview",
+            messages=[
                 {
                     "role": "user",
                     "content": [
                         {
-                            "type": "input_text",
+                            "type": "text",
                             "text": "This is a grocery receipt. Please analyze it and extract all grocery items. For each item, provide these exact fields: name, quantity (as a number), unit (e.g., pcs, lbs, oz, etc.), and price (in dollars). Format your response as a JSON array. Ignore any non-grocery items, totals, taxes, etc."
                         },
                         {
-                            "type": "input_image",
-                            "image_url": f"data:image/jpeg;base64,{base64_image}",
-                            "detail": "high"
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
                         }
                     ]
                 }
-            ]
+            ],
+            max_tokens=1000
         )
 
         # Log the raw response for debugging
-        app.logger.info(f"Raw GPT-4o response:\n{response.output_text}")
+        app.logger.info(f"Raw GPT-4 Vision response:\n{response.choices[0].message.content}")
 
         # Parse the response text as JSON
         try:
             # Remove any markdown formatting if present
-            clean_response = response.output_text.strip()
+            clean_response = response.choices[0].message.content.strip()
             if clean_response.startswith("```json"):
                 clean_response = clean_response[7:]
             if clean_response.endswith("```"):
@@ -330,7 +333,7 @@ def process_receipt(filepath):
                 item['unit'] = str(item['unit'] or 'pcs').lower()
             return items
         except json.JSONDecodeError as e:
-            app.logger.error(f"Failed to parse JSON response: {response.output_text}")
+            app.logger.error(f"Failed to parse JSON response: {response.choices[0].message.content}")
             raise Exception("Failed to parse receipt items from response")
         
     except Exception as e:
