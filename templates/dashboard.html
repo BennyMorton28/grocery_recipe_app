@@ -1333,8 +1333,7 @@ function showReceiptConfirmation(items) {
                                         <td class="item-unit">${item.unit}</td>
                                         <td class="item-price">$${item.price.toFixed(2)}</td>
                                         <td>
-                                            <input type="checkbox" class="form-check-input item-select" 
-                                                   checked data-item='${JSON.stringify(item)}'>
+                                            <input type="checkbox" class="form-check-input item-select" checked>
                                         </td>
                                         <td>
                                             <button class="btn btn-link p-0" onclick="editItem(${index})">
@@ -1366,10 +1365,21 @@ function showReceiptConfirmation(items) {
 
 function confirmReceiptItems() {
     showDebug('Starting receipt items confirmation');
+    
+    // Get all checked items and their corresponding data from the receiptItems array
     const selectedItems = Array.from(document.querySelectorAll('.item-select:checked'))
-        .map(checkbox => JSON.parse(checkbox.dataset.item));
+        .map(checkbox => {
+            const row = checkbox.closest('tr');
+            const index = checkbox.closest('tr').querySelector('.btn-link').getAttribute('onclick').match(/\d+/)[0];
+            return receiptItems[index];
+        });
     
     showDebug(`Selected ${selectedItems.length} items: ${JSON.stringify(selectedItems, null, 2)}`);
+
+    if (selectedItems.length === 0) {
+        showError('Please select at least one item');
+        return;
+    }
 
     fetch('/api/confirm_receipt_items', {
         method: 'POST',
