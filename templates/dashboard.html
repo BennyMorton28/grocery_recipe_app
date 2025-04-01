@@ -1095,82 +1095,159 @@ function updateLoadingMessage() {
     messageIndex = (messageIndex + 1) % loadingMessages.length;
 }
 
-async function handleFileUpload(event) {
+function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    try {
-        showLoadingState();
+    // Show loading state
+    showLoadingState();
 
-        const formData = new FormData();
-        formData.append('receipt', file);
+    const formData = new FormData();
+    formData.append('receipt', file);
 
-        const response = await fetch('/api/upload_receipt', {
-            method: 'POST',
-            body: formData
-        });
-
-        if (response.ok) {
-            showSuccessMessage('Receipt processed successfully!');
-            await loadInventory();
+    fetch('/api/upload_receipt', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show the items for confirmation
+            showReceiptConfirmation(data.items);
         } else {
-            throw new Error('Failed to process receipt');
+            hideLoadingState();
+            showError(data.error || 'Failed to process receipt');
         }
-    } catch (error) {
-        console.error('Error processing receipt:', error);
-        showErrorMessage('Failed to process receipt. Please try again.');
-    } finally {
+    })
+    .catch(error => {
         hideLoadingState();
-        // Reset file input
-        event.target.value = '';
-    }
+        showError('Error uploading receipt: ' + error.message);
+    });
 }
 
-// Update the takePhoto function to include loading state
-async function takePhoto() {
-    const video = document.getElementById('camera-preview');
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+function showReceiptConfirmation(items) {
+    hideLoadingState();
     
-    // Draw video frame to canvas
-    canvas.getContext('2d').drawImage(video, 0, 0);
+    // Create confirmation modal
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = 'receiptConfirmationModal';
+    modal.innerHTML = `
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Receipt Items</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Quantity</th>
+                                    <th>Unit</th>
+                                    <th>Price</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${items.map((item, index) => `
+                                    <tr>
+                                        <td>${item.name}</td>
+                                        <td>${item.quantity}</td>
+                                        <td>${item.unit}</td>
+                                        <td>$${item.price.toFixed(2)}</td>
+                                        <td>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" 
+                                                       id="item${index}" checked>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="confirmReceiptItems()">Confirm Items</button>
+                </div>
+            </div>
+        </div>
+    `;
     
-    try {
-        // Convert to blob
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg'));
-        
-        // Create form data
-        const formData = new FormData();
-        formData.append('receipt', blob, 'receipt.jpg');
-        
-        // Close camera
-        closeCamera();
-        
-        // Show loading state
-        showLoadingState();
-        
-        // Upload the image
-        const response = await fetch('/api/upload_receipt', {
-            method: 'POST',
-            body: formData
-        });
-        
-        if (response.ok) {
-            showSuccessMessage('Receipt processed successfully!');
-            await loadInventory();
-        } else {
-            throw new Error('Failed to process receipt');
-        }
-    } catch (error) {
-        console.error('Error processing receipt:', error);
-        showErrorMessage('Failed to process receipt. Please try again.');
-    } finally {
-        hideLoadingState();
-    }
+    document.body.appendChild(modal);
+    const modalInstance = new bootstrap.Modal(modal);
+    modalInstance.show();
+    
+    // Clean up modal when hidden
+    modal.addEventListener('hidden.bs.modal', function () {
+        document.body.removeChild(modal);
+    });
 }
 
-function showSuccessMessage(message) {
+function confirmReceiptItems() {
+    const modal = document.getElementById('receiptConfirmationModal');
+    const checkboxes = modal.querySelectorAll('input[type="checkbox"]');
+    const items = [];
+    
+    // Get all checked items
+    checkboxes.forEach((checkbox, index) => {
+        if (checkbox.checked) {
+            const row = checkbox.closest('tr');
+            const cells = row.cells;
+            items.push({
+                name: cells[0].textContent,
+                quantity: parseFloat(cells[1].textContent),
+                unit: cells[2].textContent,
+                price: parseFloat(cells[3].textContent.replace('$', ''))
+            });
+        }
+    });
+    
+    if (items.length === 0) {
+        showError('Please select at least one item to add');
+        return;
+    }
+    
+    // Show loading state
+    showLoadingState();
+    
+    // Send confirmed items to server
+    fetch('/api/confirm_receipt_items', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ items })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Close modal
+            const modalInstance = bootstrap.Modal.getInstance(modal);
+            modalInstance.hide();
+            
+            // Refresh inventory
+            refreshInventory();
+            
+            // Show success message
+            showSuccess(data.message);
+        } else {
+            showError(data.error || 'Failed to confirm items');
+        }
+    })
+    .catch(error => {
+        showError('Error confirming items: ' + error.message);
+    })
+    .finally(() => {
+        hideLoadingState();
+    });
+}
+
+function showSuccess(message) {
     const toast = document.createElement('div');
     toast.className = 'toast-container position-fixed top-0 end-0 p-3';
     toast.style.zIndex = '1050';
@@ -1189,7 +1266,7 @@ function showSuccessMessage(message) {
     setTimeout(() => toast.remove(), 3000);
 }
 
-function showErrorMessage(message) {
+function showError(message) {
     const toast = document.createElement('div');
     toast.className = 'toast-container position-fixed top-0 end-0 p-3';
     toast.style.zIndex = '1050';
