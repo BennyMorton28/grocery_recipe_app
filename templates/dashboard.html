@@ -1298,6 +1298,9 @@ function showReceiptConfirmation(items) {
     showDebug(`Received ${items.length} items for confirmation`);
     hideReceiptLoading();
     
+    // Store items in a global variable for edit functionality
+    window.receiptItems = items;
+    
     // Create confirmation modal
     const modal = document.createElement('div');
     modal.className = 'modal fade';
@@ -1323,7 +1326,7 @@ function showReceiptConfirmation(items) {
                                 </tr>
                             </thead>
                             <tbody id="receiptItemsBody">
-                                ${items.map(item => `
+                                ${items.map((item, index) => `
                                     <tr>
                                         <td class="item-name">${item.name}</td>
                                         <td class="item-quantity">${item.quantity}</td>
