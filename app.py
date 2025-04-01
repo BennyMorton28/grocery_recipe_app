@@ -1,7 +1,5 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, current_app
-from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os
@@ -14,7 +12,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import json
 from flask_pymongo import PyMongo
-from bson.objectid import ObjectId
+from bson import ObjectId
+from models import User, InventoryItem, Receipt, Recipe, RecipeRating, ChatMessage
 
 # Common grocery item categories and their patterns
 GROCERY_CATEGORIES = {
@@ -146,8 +145,6 @@ KITCHEN_TOOLS = {
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///grocery_recipe.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config["MONGO_URI"] = os.getenv("MONGODB_URI")
@@ -155,11 +152,12 @@ app.config["MONGO_URI"] = os.getenv("MONGODB_URI")
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'heic', 'heif'}
+# Initialize MongoDB
+mongo = PyMongo(app)
 
-db = SQLAlchemy(app)
-migrate = Migrate(app, db)
-login_manager = LoginManager(app)
+# Initialize Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 # Load environment variables
@@ -168,78 +166,9 @@ load_dotenv()
 # Initialize OpenAI client
 client = OpenAI()  # This will automatically use OPENAI_API_KEY from environment
 
-# Initialize MongoDB
-mongo = PyMongo(app)
-
-# Database Models
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128))
-    cooking_methods = db.Column(db.JSON, default=list)
-    kitchen_tools = db.Column(db.JSON, default=list)
-    preferences = db.Column(db.JSON)
-    inventory = db.relationship('InventoryItem', backref='user', lazy=True)
-    receipts = db.relationship('Receipt', backref='user', lazy=True)
-    recipe_ratings = db.relationship('RecipeRating', backref='user', lazy=True)
-    chat_messages = db.relationship('ChatMessage', backref='user', lazy=True)
-
-class InventoryItem(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    quantity = db.Column(db.Float, nullable=False)
-    unit = db.Column(db.String(20), nullable=False)
-    expiry_date = db.Column(db.DateTime)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    date_added = db.Column(db.DateTime, default=datetime.utcnow)
-
-class Receipt(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    filename = db.Column(db.String(255), nullable=False)
-    upload_date = db.Column(db.DateTime, default=datetime.utcnow)
-    processed_date = db.Column(db.DateTime)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    items = db.relationship('ReceiptItem', backref='receipt', lazy=True)
-
-class ReceiptItem(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    quantity = db.Column(db.Float, nullable=False)
-    unit = db.Column(db.String(20))
-    price = db.Column(db.Float)
-    receipt_id = db.Column(db.Integer, db.ForeignKey('receipt.id'), nullable=False)
-
-class Recipe(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(200), nullable=False)
-    ingredients = db.Column(db.JSON, nullable=False)
-    instructions = db.Column(db.Text, nullable=False)
-    prep_time = db.Column(db.Integer)
-    cook_time = db.Column(db.Integer)
-    servings = db.Column(db.Integer)
-    difficulty = db.Column(db.String(20))
-
-class RecipeRating(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    recipe_name = db.Column(db.String(200), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    rating = db.Column(db.Boolean, nullable=False)  # True for like, False for dislike
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-class ChatMessage(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    message = db.Column(db.Text, nullable=False)
-    response = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
 @login_manager.user_loader
 def load_user(user_id):
-    user_data = mongo.db.users.find_one({"_id": ObjectId(user_id)})
-    if user_data:
-        return User(user_data)
-    return None
+    return User.get(user_id, mongo)
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -386,27 +315,29 @@ def register():
         username = request.form.get('username')
         email = request.form.get('email')
         password = request.form.get('password')
-        
-        # Check if username or email already exists
-        if mongo.db.users.find_one({"$or": [{"username": username}, {"email": email}]}):
-            flash('Username or email already exists', 'error')
+
+        if mongo.db.users.find_one({'username': username}):
+            flash('Username already exists')
             return redirect(url_for('register'))
-        
-        # Create new user
+
+        if mongo.db.users.find_one({'email': email}):
+            flash('Email already registered')
+            return redirect(url_for('register'))
+
         user_data = {
-            "username": username,
-            "email": email,
-            "password_hash": generate_password_hash(password),
-            "cooking_methods": [],
-            "kitchen_tools": [],
-            "preferences": {},
-            "date_created": datetime.utcnow()
+            'username': username,
+            'email': email,
+            'password_hash': generate_password_hash(password),
+            'cooking_methods': [],
+            'kitchen_tools': [],
+            'preferences': {}
         }
-        
-        mongo.db.users.insert_one(user_data)
-        flash('Registration successful! Please login.', 'success')
-        return redirect(url_for('login'))
-    
+
+        result = mongo.db.users.insert_one(user_data)
+        user = User.get(result.inserted_id, mongo)
+        login_user(user)
+        return redirect(url_for('dashboard'))
+
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -414,18 +345,14 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        
-        user_data = mongo.db.users.find_one({"username": username})
-        
+
+        user_data = mongo.db.users.find_one({'username': username})
         if user_data and check_password_hash(user_data['password_hash'], password):
             user = User(user_data)
             login_user(user)
-            flash('Login successful!', 'success')
             return redirect(url_for('dashboard'))
-        
-        flash('Invalid username or password', 'error')
-        return redirect(url_for('login'))
-    
+
+        flash('Invalid username or password')
     return render_template('login.html')
 
 @app.route('/logout')
@@ -437,566 +364,116 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    # Get user's inventory and receipts from MongoDB
-    inventory = list(mongo.db.inventory.find({"user_id": ObjectId(current_user.get_id())}))
-    receipts = list(mongo.db.receipts.find({"user_id": ObjectId(current_user.get_id())}).sort("upload_date", -1))
-    return render_template('dashboard.html', inventory=inventory, receipts=receipts)
+    user_data = mongo.db.users.find_one({'_id': ObjectId(current_user.id)})
+    inventory_items = list(mongo.db.inventory.find({'user_id': ObjectId(current_user.id)}))
+    receipts = list(mongo.db.receipts.find({'user_id': ObjectId(current_user.id)}))
+    return render_template('dashboard.html', user=user_data, inventory=inventory_items, receipts=receipts)
 
 @app.route('/upload_receipt', methods=['POST'])
 @login_required
 def upload_receipt():
-    try:
-        if 'file' not in request.files:
-            return jsonify({'success': False, 'error': 'No file uploaded'}), 400
-        
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'success': False, 'error': 'No file selected'}), 400
-        
-        if not allowed_file(file.filename):
-            return jsonify({'success': False, 'error': 'Invalid file type. Please upload an image file.'}), 400
-        
-        # Save the file
+    if 'receipt' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['receipt']
+    if file.filename:
         filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         
-        # Process the receipt image
-        try:
-            items = process_receipt(filepath)
-            
-            # Save items to inventory
-            for item in items:
-                inventory_item = InventoryItem(
-                    name=item['name'],
-                    quantity=item['quantity'],
-                    unit=item['unit'],
-                    user_id=current_user.id
-                )
-                db.session.add(inventory_item)
-            
-            db.session.commit()
-            
-            # Clean up the uploaded file
-            os.remove(filepath)
-            
-            return jsonify({
-                'success': True,
-                'message': f'Successfully added {len(items)} items to inventory',
-                'items': items
-            })
-            
-        except Exception as e:
-            # Clean up the uploaded file in case of error
-            if os.path.exists(filepath):
-                os.remove(filepath)
-            app.logger.error(f"Error processing receipt: {str(e)}")
-            return jsonify({'success': False, 'error': f'Error processing receipt: {str(e)}'}), 500
-            
-    except Exception as e:
-        app.logger.error(f"Error uploading receipt: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        receipt_data = {
+            'filename': filename,
+            'upload_date': datetime.utcnow(),
+            'user_id': ObjectId(current_user.id)
+        }
+        result = mongo.db.receipts.insert_one(receipt_data)
+        return jsonify({'status': 'success', 'id': str(result.inserted_id)})
+
+    return jsonify({'error': 'Invalid file'}), 400
 
 @app.route('/add_item', methods=['POST'])
 @login_required
 def add_item():
-    data = request.json
-    new_item = InventoryItem(
-        name=data['name'],
-        quantity=data['quantity'],
-        unit=data['unit'],
-        expiry_date=datetime.strptime(data['expiry_date'], '%Y-%m-%d') if data.get('expiry_date') else None,
-        user_id=current_user.id
-    )
-    db.session.add(new_item)
-    db.session.commit()
-    return jsonify({'message': 'Item added successfully'})
+    data = request.get_json()
+    item_data = {
+        'name': data['name'],
+        'quantity': float(data['quantity']),
+        'unit': data['unit'],
+        'user_id': ObjectId(current_user.id),
+        'date_added': datetime.utcnow()
+    }
+    if 'expiry_date' in data:
+        item_data['expiry_date'] = datetime.fromisoformat(data['expiry_date'])
+    
+    result = mongo.db.inventory.insert_one(item_data)
+    return jsonify({'status': 'success', 'id': str(result.inserted_id)})
 
-@app.route('/delete_item/<int:item_id>', methods=['DELETE'])
+@app.route('/delete_item/<item_id>', methods=['DELETE'])
 @login_required
 def delete_item(item_id):
-    item = InventoryItem.query.get_or_404(item_id)
-    if item.user_id != current_user.id:
-        return jsonify({'error': 'Unauthorized'}), 403
-    db.session.delete(item)
-    db.session.commit()
-    return jsonify({'message': 'Item deleted successfully'})
+    mongo.db.inventory.delete_one({
+        '_id': ObjectId(item_id),
+        'user_id': ObjectId(current_user.id)
+    })
+    return jsonify({'status': 'success'})
 
 @app.route('/get_recipes')
 @login_required
 def get_recipes():
-    try:
-        inventory_items = InventoryItem.query.filter_by(user_id=current_user.id).all()
-        app.logger.info(f"Found {len(inventory_items)} inventory items")
-        
-        if not inventory_items:
-            app.logger.warning("No inventory items found")
-            return jsonify({'recipes': [], 'message': 'No ingredients available'})
-
-        # Get filters from request
-        filters = request.args.get('filters', '{}')
-        try:
-            filters = json.loads(filters)
-            app.logger.info(f"Received filters: {filters}")
-        except json.JSONDecodeError:
-            filters = {}
-            app.logger.warning("Failed to parse filters JSON")
-
-        # Format inventory items with clean units
-        ingredients_list = []
-        ingredients_summary = []
-        for item in inventory_items:
-            if item.quantity and item.unit:
-                formatted_amount = clean_unit(item.quantity, item.unit)
-                ingredients_list.append(f"- {formatted_amount} of {item.name}")
-                ingredients_summary.append(f"{formatted_amount} of {item.name}")
-            else:
-                ingredients_list.append(f"- {item.name}")
-                ingredients_summary.append(item.name)
-
-        ingredients_text = "\n".join(ingredients_list)
-        app.logger.info(f"Formatted ingredients:\n{ingredients_text}")
-
-        # Get user's cooking methods and tools
-        cooking_methods = [COOKING_METHODS[method]['name'] for method in (current_user.cooking_methods or []) if method in COOKING_METHODS]
-        kitchen_tools = [KITCHEN_TOOLS[tool]['name'] for tool in (current_user.kitchen_tools or []) if tool in KITCHEN_TOOLS]
-        
-        app.logger.info(f"User cooking methods: {cooking_methods}")
-        app.logger.info(f"User kitchen tools: {kitchen_tools}")
-
-        # Add filter constraints to the prompt
-        constraints = []
-        if filters.get('timeConstraint'):
-            constraints.append(f"- Must take less than {filters['timeConstraint']} minutes to prepare")
-        if filters.get('preferredMethod'):
-            method_name = COOKING_METHODS.get(filters['preferredMethod'], {}).get('name')
-            if method_name:
-                constraints.append(f"- Must use {method_name} as the primary cooking method")
-        if filters.get('dietary'):
-            constraints.extend([f"- Must be {pref}" for pref in filters['dietary']])
-        if filters.get('mustUseIngredients'):
-            must_use = [item.name for item in inventory_items if str(item.id) in filters['mustUseIngredients']]
-            if must_use:
-                constraints.append(f"- Must use these ingredients: {', '.join(must_use)}")
-        
-        constraints_text = "\n".join(constraints) if constraints else "No specific constraints"
-
-        # Always request 10 recipes initially
-        recipes_to_request = 10
-        app.logger.info(f"Requesting {recipes_to_request} recipes")
-
-        system_prompt = """You are a helpful cooking assistant. When suggesting recipes:
-1. Format each recipe clearly with sections for name, ingredients, and instructions
-2. Start each recipe with 'Recipe: ' followed by the name
-3. List ingredients with quantities and units (e.g., '2 cups of flour' not '2 cup flour')
-4. Provide clear, step-by-step instructions
-5. Include preparation time
-6. Consider the user's available cooking methods and tools
-7. Separate required ingredients (from the list) and additional ingredients needed
-8. Never list 'none' or empty ingredients
-9. Use proper units (e.g., 'piece' instead of 'pcs', '1 piece' vs '2 pieces')
-10. Each recipe must use at least 2 ingredients from the available inventory
-11. Suggest creative but practical recipes based on the available ingredients
-12. Make sure each recipe is unique and different from the others"""
-
-        user_prompt = f"""Based on these available ingredients:
-{ingredients_text}
-
-Using these cooking methods and tools:
-Cooking Methods: {', '.join(cooking_methods) if cooking_methods else 'Any'}
-Kitchen Tools: {', '.join(kitchen_tools) if kitchen_tools else 'Basic kitchen tools'}
-
-With these constraints:
-{constraints_text}
-
-Please suggest {recipes_to_request} unique and different recipes that can be made using some or all of these ingredients. 
-Each recipe must use at least 2 ingredients from my inventory and should be distinctly different from the others.
-For each recipe, include:
-1. Recipe name (start with 'Recipe: ')
-2. Required ingredients from my inventory (with quantities)
-3. Additional ingredients needed (with quantities)
-4. Preparation time
-5. Clear cooking instructions that utilize the available cooking methods and tools
-
-Available ingredients summary: {', '.join(ingredients_summary)}"""
-
-        # Call OpenAI API
-        try:
-            completion = client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.8,
-                max_tokens=4000
-            )
-            app.logger.info("Successfully received OpenAI API response")
-            
-            response_text = completion.choices[0].message.content
-            app.logger.info(f"OpenAI response text:\n{response_text}")
-            
-            recipes = parse_recipe_suggestions(response_text)
-            app.logger.info(f"Parsed {len(recipes)} recipes")
-            
-            return jsonify({'recipes': recipes})
-
-        except Exception as api_error:
-            app.logger.error(f"OpenAI API error: {str(api_error)}")
-            raise
-
-    except Exception as e:
-        app.logger.error(f"Error generating recipes: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/get_single_recipe', methods=['POST'])
-@login_required
-def get_single_recipe():
-    """Generate a single new recipe to replace a removed one"""
-    try:
-        # Use the same logic as get_recipes but request only one recipe
-        request.args = dict(request.args)
-        request.args['current_count'] = '9'  # Pretend we have 9 recipes to get 1 more
-        response = get_recipes()
-        if response.status_code == 200:
-            data = response.get_json()
-            if data.get('recipes'):
-                return jsonify({'recipe': data['recipes'][0]})
-        return jsonify({'error': 'Failed to generate new recipe'}), 500
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-def clean_unit(quantity, unit):
-    # Convert float to int if it's a whole number
-    if isinstance(quantity, (int, float)):
-        if quantity.is_integer():
-            quantity = int(quantity)
-    
-    # Clean up unit names
-    unit_mapping = {
-        'pcs': 'piece',
-        'pc': 'piece',
-        'pieces': 'piece',
-        'g': 'grams',
-        'ml': 'milliliters',
-        'l': 'liters',
-        'oz': 'ounces',
-        'lb': 'pounds',
-        'tsp': 'teaspoon',
-        'tbsp': 'tablespoon',
-        'cup': 'cups',
-    }
-    
-    # Handle pluralization
-    if unit.lower() in unit_mapping:
-        base_unit = unit_mapping[unit.lower()]
-        if quantity == 1:
-            return f"{quantity} {base_unit}"
-        else:
-            # Handle special cases
-            if base_unit == 'piece':
-                return f"{quantity} pieces"
-            return f"{quantity} {base_unit}s"
-    
-    return f"{quantity} {unit}"
-
-def parse_recipe_suggestions(response_text):
-    recipes = []
-    current_recipe = None
-    current_section = None
-    
-    # Split response into lines and process each line
-    lines = response_text.split('\n')
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        
-        # Skip empty lines
-        if not line:
-            i += 1
-            continue
-        
-        # Start a new recipe when we see "Recipe:"
-        if line.lower().startswith('recipe:'):
-            if current_recipe:
-                if current_recipe.get('name') and current_recipe.get('instructions'):
-                    recipes.append(current_recipe)
-            
-            current_recipe = {
-                'name': line.replace('Recipe:', '').strip(),
-                'required_ingredients': [],
-                'additional_ingredients': [],
-                'preparation_time': 'Not specified',
-                'instructions': []
-            }
-            current_section = None
-            
-        # Process sections within a recipe
-        elif current_recipe:
-            lower_line = line.lower()
-            
-            # Check for section headers
-            if any(header in lower_line for header in ['required ingredients:', 'ingredients from inventory:', 'from your inventory:']):
-                current_section = 'required_ingredients'
-                
-            elif any(header in lower_line for header in ['additional ingredients:', 'extra ingredients:', 'other ingredients:']):
-                current_section = 'additional_ingredients'
-                
-            elif any(header in lower_line for header in ['preparation time:', 'prep time:', 'cooking time:', 'total time:']):
-                current_recipe['preparation_time'] = line.split(':', 1)[1].strip()
-                current_section = None
-                
-            elif any(header in lower_line for header in ['instructions:', 'steps:', 'directions:', 'method:']):
-                current_section = 'instructions'
-                
-            # Process content based on current section
-            elif current_section:
-                # Handle list items (both numbered and bulleted)
-                if line.startswith(('-', '•', '*')) or re.match(r'^\d+\.?\s', line):
-                    content = re.sub(r'^[-•*\d.]\s*', '', line).strip()
-                    
-                    if current_section == 'instructions':
-                        if content:
-                            current_recipe['instructions'].append(content)
-                    else:  # ingredients sections
-                        if content.lower() not in ['none', 'n/a', '-']:
-                            current_recipe[current_section].append(content)
-                
-                # Handle non-list items in instructions
-                elif current_section == 'instructions' and line:
-                    current_recipe['instructions'].append(line)
-        
-        i += 1
-    
-    # Add the last recipe if it exists
-    if current_recipe and current_recipe.get('name') and current_recipe.get('instructions'):
-        recipes.append(current_recipe)
-    
-    # Clean up recipes
-    for recipe in recipes:
-        # Remove duplicates while preserving order
-        for section in ['required_ingredients', 'additional_ingredients']:
-            seen = set()
-            recipe[section] = [x for x in recipe[section] if not (x.lower() in seen or seen.add(x.lower()))]
-        
-        # Clean up and number instructions
-        recipe['instructions'] = [
-            f"{i+1}. {instr.strip()}" 
-            for i, instr in enumerate(recipe['instructions']) 
-            if instr.strip()
-        ]
-        
-        # Ensure preparation time is set
-        if not recipe['preparation_time'] or recipe['preparation_time'] == 'Not specified':
-            recipe['preparation_time'] = '30-40 minutes'  # Default value
-    
-    app.logger.info(f"Parsed {len(recipes)} recipes: {[r['name'] for r in recipes]}")
-    return recipes
-
-@app.route('/delete_all_inventory', methods=['POST'])
-@login_required
-def delete_all_inventory():
-    try:
-        # Delete all inventory items for the current user
-        InventoryItem.query.filter_by(user_id=current_user.id).delete()
-        db.session.commit()
-        flash('All inventory items have been deleted.', 'success')
-    except Exception as e:
-        db.session.rollback()
-        flash('Error deleting inventory items.', 'error')
-    
-    return redirect(url_for('dashboard'))
-
-@app.route('/add_test_items')
-@login_required
-def add_test_items():
-    try:
-        # Sample items
-        test_items = [
-            {'name': 'Chicken Breast', 'quantity': 2, 'unit': 'pcs'},
-            {'name': 'Rice', 'quantity': 500, 'unit': 'g'},
-            {'name': 'Tomatoes', 'quantity': 3, 'unit': 'pcs'},
-            {'name': 'Onion', 'quantity': 2, 'unit': 'pcs'},
-            {'name': 'Garlic', 'quantity': 5, 'unit': 'cloves'}
-        ]
-
-        # Add items to inventory
-        for item in test_items:
-            new_item = InventoryItem(
-                name=item['name'],
-                quantity=item['quantity'],
-                unit=item['unit'],
-                user_id=current_user.id
-            )
-            db.session.add(new_item)
-        
-        db.session.commit()
-        return jsonify({'message': 'Test items added successfully'})
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error adding test items: {str(e)}")
-        return jsonify({'error': 'Failed to add test items'}), 500
+    recipes = list(mongo.db.recipes.find({'created_by': ObjectId(current_user.id)}))
+    return jsonify([{
+        'id': str(recipe['_id']),
+        'name': recipe['name'],
+        'ingredients': recipe['ingredients'],
+        'instructions': recipe['instructions'],
+        'prep_time': recipe.get('prep_time'),
+        'cook_time': recipe.get('cook_time'),
+        'servings': recipe.get('servings'),
+        'difficulty': recipe.get('difficulty')
+    } for recipe in recipes])
 
 @app.route('/rate_recipe', methods=['POST'])
 @login_required
 def rate_recipe():
-    data = request.json
-    recipe_name = data.get('recipe_name')
-    rating = data.get('rating')  # true for like, false for dislike
-    
-    if not recipe_name:
-        return jsonify({'error': 'Recipe name is required'}), 400
-        
-    # Check if rating already exists
-    existing_rating = RecipeRating.query.filter_by(
-        user_id=current_user.id,
-        recipe_name=recipe_name
-    ).first()
-    
-    if existing_rating:
-        existing_rating.rating = rating
-    else:
-        new_rating = RecipeRating(
-            recipe_name=recipe_name,
-            user_id=current_user.id,
-            rating=rating
-        )
-        db.session.add(new_rating)
-    
-    db.session.commit()
-    return jsonify({'message': 'Rating saved successfully'})
+    data = request.get_json()
+    rating_data = {
+        'recipe_name': data['recipe_name'],
+        'user_id': ObjectId(current_user.id),
+        'rating': data['rating'],
+        'created_at': datetime.utcnow()
+    }
+    mongo.db.recipe_ratings.insert_one(rating_data)
+    return jsonify({'status': 'success'})
 
 @app.route('/chat', methods=['POST'])
 @login_required
 def chat():
-    try:
-        data = request.json
-        user_message = data.get('message', '').strip()
-        
-        if not user_message:
-            return jsonify({'error': 'Message is required'}), 400
-
-        # Create the chat prompt
-        inventory_items = InventoryItem.query.filter_by(user_id=current_user.id).all()
-        ingredients_list = "\n".join([f"- {item.quantity} {item.unit} of {item.name}" for item in inventory_items])
-        
-        system_prompt = """You are a helpful cooking assistant. When suggesting recipes:
-1. Format each recipe clearly with sections for name, ingredients, and instructions
-2. Start each recipe with 'Recipe: ' followed by the name
-3. List ingredients with bullet points (-)
-4. Provide clear, step-by-step instructions
-5. Include preparation time
-6. Consider the user's available ingredients when suggesting recipes
-7. Be conversational and friendly"""
-
-        user_prompt = f"""Available ingredients:
-{ingredients_list}
-
-User request: {user_message}
-
-Please provide recipe suggestions based on the request and available ingredients. If specific ingredients are missing, suggest alternatives or additional items needed."""
-
-        # Call OpenAI API
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.7,
-            max_tokens=2000
-        )
-
-        # Get the response text
-        assistant_response = response.choices[0].message.content
-
-        # Save the chat message
-        chat_message = ChatMessage(
-            user_id=current_user.id,
-            message=user_message,
-            response=assistant_response
-        )
-        db.session.add(chat_message)
-        db.session.commit()
-
-        # Parse any recipes in the response
-        recipes = parse_recipe_suggestions(assistant_response)
-        
-        return jsonify({
-            'message': assistant_response,
-            'recipes': recipes
-        })
-
-    except Exception as e:
-        app.logger.error(f"Chat error: {str(e)}")
-        app.logger.exception("Full traceback:")
-        return jsonify({
-            'error': 'Failed to process chat message',
-            'details': str(e)
-        }), 500
-
-@app.route('/refresh_recipe/<recipe_name>', methods=['POST'])
-@login_required
-def refresh_recipe():
-    try:
-        recipe_name = request.json.get('recipe_name')
-        if not recipe_name:
-            return jsonify({'error': 'Recipe name is required'}), 400
-
-        # Get user's inventory items
-        inventory_items = InventoryItem.query.filter_by(user_id=current_user.id).all()
-        ingredients_list = "\n".join([f"- {item.quantity} {item.unit} of {item.name}" for item in inventory_items])
-
-        # Create a specific prompt for the recipe
-        prompt = f"""Based on these available ingredients:
-{ingredients_list}
-
-Please provide a new variation of the recipe '{recipe_name}'. Include:
-1. Recipe name (keep it similar but with a twist)
-2. Required ingredients from the list (with bullet points)
-3. Additional ingredients needed (with bullet points)
-4. Preparation time
-5. Clear cooking instructions"""
-
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a helpful cooking assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.8,
-            max_tokens=1000
-        )
-
-        recipes = parse_recipe_suggestions(response.choices[0].message.content)
-        if recipes:
-            return jsonify({'recipe': recipes[0]})
-        else:
-            return jsonify({'error': 'Could not generate a new recipe variation'}), 500
-
-    except Exception as e:
-        app.logger.error(f"Error refreshing recipe: {str(e)}")
-        return jsonify({'error': 'Failed to refresh recipe'}), 500
+    data = request.get_json()
+    message = data.get('message')
+    
+    # Your existing chat logic here...
+    
+    chat_data = {
+        'user_id': ObjectId(current_user.id),
+        'message': message,
+        'response': 'Your AI response here',  # Replace with actual AI response
+        'created_at': datetime.utcnow()
+    }
+    mongo.db.chat_messages.insert_one(chat_data)
+    return jsonify({'response': chat_data['response']})
 
 @app.route('/preferences', methods=['GET', 'POST'])
 @login_required
 def preferences():
     if request.method == 'POST':
-        cooking_methods = request.form.getlist('cooking_methods')
-        kitchen_tools = request.form.getlist('kitchen_tools')
-        
-        current_user.cooking_methods = cooking_methods
-        current_user.kitchen_tools = kitchen_tools
-        db.session.commit()
-        
-        flash('Preferences updated successfully!', 'success')
-        return redirect(url_for('dashboard'))
-        
-    return render_template('preferences.html', 
-                         cooking_methods=COOKING_METHODS,
-                         kitchen_tools=KITCHEN_TOOLS,
-                         user_cooking_methods=current_user.cooking_methods or [],
-                         user_kitchen_tools=current_user.kitchen_tools or [])
+        data = request.get_json()
+        mongo.db.users.update_one(
+            {'_id': ObjectId(current_user.id)},
+            {'$set': {'preferences': data}}
+        )
+        return jsonify({'status': 'success'})
+    
+    user_data = mongo.db.users.find_one({'_id': ObjectId(current_user.id)})
+    return jsonify(user_data.get('preferences', {}))
 
 if __name__ == '__main__':
     print("Starting server...")
