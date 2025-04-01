@@ -11,11 +11,11 @@ A smart recipe suggestion application that helps you make the most of your groce
 - Like/dislike recipes to improve suggestions
 - Mobile-friendly interface
 
-## Setup
+## Local Setup
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/YOUR_USERNAME/grocery_recipe_app.git
+git clone https://github.com/BennyMorton28/grocery_recipe_app.git
 cd grocery_recipe_app
 ```
 
@@ -45,6 +45,74 @@ python app.py
 ```
 
 The app will be available at `http://localhost:8080`
+
+## EC2 Deployment
+
+1. Connect to your EC2 instance:
+```bash
+ssh -i your-key.pem ubuntu@your-ec2-ip
+```
+
+2. Install required packages:
+```bash
+sudo apt update
+sudo apt install python3-pip python3-venv nginx
+```
+
+3. Clone the repository:
+```bash
+git clone https://github.com/BennyMorton28/grocery_recipe_app.git
+cd grocery_recipe_app
+```
+
+4. Set up the virtual environment:
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+5. Create and configure the .env file:
+```bash
+nano .env
+# Add your environment variables
+```
+
+6. Set up the systemd service:
+```bash
+sudo cp grocery_recipe_app.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start grocery_recipe_app
+sudo systemctl enable grocery_recipe_app
+```
+
+7. Configure Nginx:
+```bash
+sudo nano /etc/nginx/sites-available/grocery_recipe_app
+```
+
+Add the following configuration:
+```nginx
+server {
+    listen 80;
+    server_name your_domain_or_ip;
+
+    location / {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+8. Enable the site and restart Nginx:
+```bash
+sudo ln -s /etc/nginx/sites-available/grocery_recipe_app /etc/nginx/sites-enabled
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+The app will be available at your EC2 instance's public IP or domain name.
 
 ## Usage
 

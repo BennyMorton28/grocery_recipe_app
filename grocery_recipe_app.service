@@ -1,0 +1,13 @@
+[Unit]
+Description=Grocery Recipe App
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/grocery_recipe_app
+Environment="PATH=/home/ubuntu/grocery_recipe_app/venv/bin"
+ExecStart=/home/ubuntu/grocery_recipe_app/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:8080 wsgi:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target 
