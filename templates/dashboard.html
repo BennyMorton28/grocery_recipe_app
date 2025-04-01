@@ -652,6 +652,34 @@
     white-space: pre-wrap;
     word-wrap: break-word;
 }
+
+.edit-form {
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+}
+
+.edit-form .form-group {
+    margin-bottom: 10px;
+}
+
+.edit-form label {
+    font-weight: 500;
+    margin-bottom: 3px;
+}
+
+.btn-link {
+    padding: 0;
+    border: none;
+}
+
+.btn-link:hover {
+    text-decoration: none;
+}
+
+.fa-pencil-alt {
+    font-size: 0.9em;
+}
 </style>
 {% endblock %}
 
@@ -1291,18 +1319,24 @@ function showReceiptConfirmation(items) {
                                     <th>Unit</th>
                                     <th>Price</th>
                                     <th>Select</th>
+                                    <th>Edit</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="receiptItemsBody">
                                 ${items.map(item => `
                                     <tr>
-                                        <td>${item.name}</td>
-                                        <td>${item.quantity}</td>
-                                        <td>${item.unit}</td>
-                                        <td>$${item.price.toFixed(2)}</td>
+                                        <td class="item-name">${item.name}</td>
+                                        <td class="item-quantity">${item.quantity}</td>
+                                        <td class="item-unit">${item.unit}</td>
+                                        <td class="item-price">$${item.price.toFixed(2)}</td>
                                         <td>
                                             <input type="checkbox" class="form-check-input item-select" 
                                                    checked data-item='${JSON.stringify(item)}'>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-link p-0" onclick="editItem(${index})">
+                                                <i class="fas fa-pencil-alt text-primary"></i>
+                                            </button>
                                         </td>
                                     </tr>
                                 `).join('')}
@@ -1404,6 +1438,96 @@ function showDebug(message) {
     debugOutput.textContent += message + '\n';
     debugPanel.style.display = 'block';
     debugOutput.scrollTop = debugOutput.scrollHeight;
+}
+
+function showReceiptItems(items) {
+    const tbody = document.getElementById('receiptItemsBody');
+    tbody.innerHTML = '';
+    
+    items.forEach((item, index) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="item-name">${item.name}</td>
+            <td class="item-quantity">${item.quantity}</td>
+            <td class="item-unit">${item.unit}</td>
+            <td class="item-price">$${item.price.toFixed(2)}</td>
+            <td>
+                <input type="checkbox" class="form-check-input" checked data-index="${index}">
+            </td>
+            <td>
+                <button class="btn btn-link p-0" onclick="editItem(${index})">
+                    <i class="fas fa-pencil-alt text-primary"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    $('#confirmReceiptModal').modal('show');
+}
+
+function editItem(index) {
+    const item = receiptItems[index];
+    
+    // Create edit form HTML
+    const editForm = `
+        <div class="edit-form">
+            <div class="form-group mb-2">
+                <label>Name:</label>
+                <input type="text" class="form-control" id="edit-name" value="${item.name}">
+            </div>
+            <div class="form-group mb-2">
+                <label>Quantity:</label>
+                <input type="number" class="form-control" id="edit-quantity" value="${item.quantity}" step="0.01">
+            </div>
+            <div class="form-group mb-2">
+                <label>Unit:</label>
+                <input type="text" class="form-control" id="edit-unit" value="${item.unit}">
+            </div>
+            <div class="form-group mb-2">
+                <label>Price:</label>
+                <input type="number" class="form-control" id="edit-price" value="${item.price}" step="0.01">
+            </div>
+            <div class="d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary" onclick="cancelEdit(${index})">Cancel</button>
+                <button class="btn btn-primary" onclick="saveEdit(${index})">Save</button>
+            </div>
+        </div>
+    `;
+    
+    // Replace the row content with the edit form
+    const row = document.querySelector(`#receiptItemsBody tr:nth-child(${index + 1})`);
+    const originalContent = row.innerHTML;
+    row.innerHTML = `<td colspan="6">${editForm}</td>`;
+    row.dataset.originalContent = originalContent;
+}
+
+function cancelEdit(index) {
+    const row = document.querySelector(`#receiptItemsBody tr:nth-child(${index + 1})`);
+    row.innerHTML = row.dataset.originalContent;
+}
+
+function saveEdit(index) {
+    const name = document.getElementById('edit-name').value;
+    const quantity = parseFloat(document.getElementById('edit-quantity').value);
+    const unit = document.getElementById('edit-unit').value;
+    const price = parseFloat(document.getElementById('edit-price').value);
+    
+    if (!name || isNaN(quantity) || !unit || isNaN(price)) {
+        showError('Please fill in all fields correctly');
+        return;
+    }
+    
+    // Update the item in the receiptItems array
+    receiptItems[index] = {
+        name: name,
+        quantity: quantity,
+        unit: unit,
+        price: price
+    };
+    
+    // Refresh the table
+    showReceiptItems(receiptItems);
 }
 </script>
 {% endblock %} 
