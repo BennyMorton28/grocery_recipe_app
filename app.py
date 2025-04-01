@@ -318,7 +318,10 @@ def process_receipt(receipt_path):
             input=[{
                 "role": "user",
                 "content": [
-                    {"type": "input_text", "text": "Please analyze this receipt and extract all grocery items. For each item, provide: name, quantity, unit, and price. Format the response as a JSON array with these fields. Example: [{\"name\": \"Milk\", \"quantity\": 1, \"unit\": \"gallon\", \"price\": 3.99}]. Return ONLY the JSON array, no other text or formatting."},
+                    {
+                        "type": "input_text",
+                        "text": "Please analyze this receipt and extract all grocery items. For each item, provide: name, quantity, unit, and price. Format the response as a JSON array with these fields. Example: [{\"name\": \"Milk\", \"quantity\": 1, \"unit\": \"gallon\", \"price\": 3.99}]. Return ONLY the JSON array, no other text or formatting."
+                    },
                     {
                         "type": "input_image",
                         "image_url": f"data:image/jpeg;base64,{base64_image}",
