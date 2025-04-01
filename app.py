@@ -275,18 +275,14 @@ def extract_price(text):
     price_match = re.search(r'\$?(\d+\.\d{2})', text)
     return float(price_match.group(1)) if price_match else 0.0
 
-def process_receipt(filepath):
-    """Process a receipt image using OpenAI's vision capabilities"""
+def process_receipt(receipt_path):
+    """Process receipt image using OpenAI Vision API"""
     try:
-        # Function to encode the image
-        def encode_image(image_path):
-            with open(image_path, "rb") as image_file:
-                return base64.b64encode(image_file.read()).decode("utf-8")
-
-        # Get the base64 string
-        base64_image = encode_image(filepath)
-
-        # Call OpenAI API with vision capabilities
+        # Encode image to base64
+        with open(receipt_path, "rb") as image_file:
+            base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+        
+        # Prepare the API request
         response = client.responses.create(
             model="gpt-4o",
             input=[{
@@ -294,7 +290,7 @@ def process_receipt(filepath):
                 "content": [
                     {
                         "type": "input_text",
-                        "text": "This is a grocery receipt. Please analyze it and extract all grocery items. For each item, provide these exact fields: name, quantity (as a number), unit (e.g., pcs, lbs, oz, etc.), and price (in dollars). Format your response as a JSON array. Ignore any non-grocery items, totals, taxes, etc."
+                        "text": "Please analyze this receipt and extract all grocery items. For each item, provide: name, quantity, unit, and price. Format the response as a JSON array with these fields. Example: [{\"name\": \"Milk\", \"quantity\": 1, \"unit\": \"gallon\", \"price\": 3.99}]"
                     },
                     {
                         "type": "input_image",
@@ -304,37 +300,51 @@ def process_receipt(filepath):
                 ]
             }]
         )
-
-        # Log the raw response for debugging
-        app.logger.info(f"Raw GPT-4o response:\n{response.output_text}")
-
-        # Parse the response text as JSON
-        try:
-            # Remove any markdown formatting if present
-            clean_response = response.output_text.strip()
-            if clean_response.startswith("```json"):
-                clean_response = clean_response[7:]
-            if clean_response.endswith("```"):
-                clean_response = clean_response[:-3]
-            
-            items = json.loads(clean_response)
-            # Ensure each item has the required fields
-            for item in items:
-                if not all(key in item for key in ['name', 'quantity', 'unit', 'price']):
-                    raise ValueError("Missing required fields in item")
-                # Convert quantity and price to float
-                item['quantity'] = float(item['quantity'])
-                item['price'] = float(item['price'])
-                # Ensure unit is a string
-                item['unit'] = str(item['unit'] or 'pcs').lower()
-            return items
-        except json.JSONDecodeError as e:
-            app.logger.error(f"Failed to parse JSON response: {response.output_text}")
-            raise Exception("Failed to parse receipt items from response")
         
+        # Log the response for debugging
+        app.logger.info(f"OpenAI API Response: {response.output_text}")
+        
+        # Parse the response
+        try:
+            items = json.loads(response.output_text)
+            if not isinstance(items, list):
+                raise ValueError("Response is not a list of items")
+            
+            # Validate and clean each item
+            cleaned_items = []
+            for item in items:
+                if not all(k in item for k in ['name', 'quantity', 'unit', 'price']):
+                    app.logger.warning(f"Item missing required fields: {item}")
+                    continue
+                
+                # Clean and validate the item
+                cleaned_item = {
+                    'name': clean_item_name(item['name']),
+                    'quantity': float(item['quantity']),
+                    'unit': clean_unit(item['unit']),
+                    'price': float(item['price'])
+                }
+                
+                if cleaned_item['name'] and cleaned_item['quantity'] > 0:
+                    cleaned_items.append(cleaned_item)
+            
+            app.logger.info(f"Successfully processed {len(cleaned_items)} items from receipt")
+            return cleaned_items
+            
+        except json.JSONDecodeError as e:
+            app.logger.error(f"Failed to parse recipe response: {response.output_text}")
+            app.logger.error(f"JSON decode error: {str(e)}")
+            raise ValueError("Failed to parse receipt data")
+            
     except Exception as e:
         app.logger.error(f"Error processing receipt: {str(e)}")
-        raise Exception(f"Failed to process receipt: {str(e)}")
+        raise
+    finally:
+        # Clean up the uploaded file
+        try:
+            os.remove(receipt_path)
+        except Exception as e:
+            app.logger.warning(f"Failed to remove temporary file: {str(e)}")
 
 # Routes
 @app.route('/')
@@ -418,19 +428,19 @@ def dashboard():
 @login_required
 def upload_receipt():
     """Handle receipt upload and processing."""
-    print("Starting receipt upload process...")
+    app.logger.info("Starting receipt upload process")
     
     if 'receipt' not in request.files:
-        print("Error: No receipt file in request")
+        app.logger.error("No receipt file in request")
         return jsonify({'error': 'No file uploaded'}), 400
     
     file = request.files['receipt']
     if file.filename == '':
-        print("Error: Empty filename")
+        app.logger.error("Empty filename")
         return jsonify({'error': 'No file selected'}), 400
     
     if not allowed_file(file.filename):
-        print(f"Error: Invalid file type for {file.filename}")
+        app.logger.error(f"Invalid file type: {file.filename}")
         return jsonify({'error': 'Invalid file type'}), 400
     
     try:
@@ -440,77 +450,97 @@ def upload_receipt():
         unique_filename = f"{timestamp}_{filename}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
         
-        print(f"Saving file to {filepath}")
+        app.logger.info(f"Saving file to {filepath}")
         file.save(filepath)
         
-        print("Processing receipt with OCR...")
-        # Process the receipt
+        app.logger.info("Processing receipt with OpenAI Vision API")
         try:
-            # Extract text from image using OCR
-            image = Image.open(filepath)
-            text = pytesseract.image_to_string(image)
-            print(f"OCR Result: {text[:200]}...")  # Print first 200 chars of OCR result
+            # Process the receipt
+            items = process_receipt(filepath)
             
-            # Process the extracted text
-            items = []
-            lines = text.split('\n')
+            if not items:
+                app.logger.warning("No items found in receipt")
+                return jsonify({'error': 'No items found in receipt'}), 400
             
-            print("Analyzing receipt lines...")
-            for line in lines:
-                if not line.strip() or should_ignore_line(line):
-                    continue
-                
-                # Clean and process the line
-                item_name = clean_item_name(line)
-                if not item_name:
-                    continue
-                
-                quantity = extract_quantity(line)
-                unit = identify_unit(line)
-                category = identify_category(item_name)
-                
-                print(f"Found item: {item_name} ({quantity} {unit}) - Category: {category}")
-                
-                # Add to MongoDB
-                try:
-                    mongo.db.inventory.insert_one({
-                        'user_id': current_user.id,
-                        'name': item_name,
-                        'quantity': quantity,
-                        'unit': unit,
-                        'category': category,
-                        'date_added': datetime.utcnow()
-                    })
-                except Exception as db_error:
-                    print(f"Database error: {str(db_error)}")
-                    continue
-                
-                items.append({
-                    'name': item_name,
-                    'quantity': quantity,
-                    'unit': unit,
-                    'category': category
-                })
+            app.logger.info(f"Successfully processed {len(items)} items")
             
-            print(f"Successfully processed {len(items)} items")
-            return jsonify({'success': True, 'items': items}), 200
+            # Return the items for user confirmation
+            return jsonify({
+                'success': True,
+                'items': items,
+                'message': f'Found {len(items)} items. Please review and confirm.'
+            }), 200
             
         except Exception as process_error:
-            print(f"Error processing receipt: {str(process_error)}")
-            return jsonify({'error': 'Failed to process receipt', 'details': str(process_error)}), 500
+            app.logger.error(f"Error processing receipt: {str(process_error)}")
+            return jsonify({
+                'error': 'Failed to process receipt',
+                'details': str(process_error)
+            }), 500
             
     except Exception as save_error:
-        print(f"Error saving file: {str(save_error)}")
-        return jsonify({'error': 'Failed to save file', 'details': str(save_error)}), 500
+        app.logger.error(f"Error saving file: {str(save_error)}")
+        return jsonify({
+            'error': 'Failed to save file',
+            'details': str(save_error)
+        }), 500
     
     finally:
         # Clean up the uploaded file
         try:
             if os.path.exists(filepath):
                 os.remove(filepath)
-                print(f"Cleaned up file: {filepath}")
+                app.logger.info(f"Cleaned up file: {filepath}")
         except Exception as cleanup_error:
-            print(f"Error during cleanup: {str(cleanup_error)}")
+            app.logger.error(f"Error during cleanup: {str(cleanup_error)}")
+
+@app.route('/api/confirm_receipt_items', methods=['POST'])
+@login_required
+def confirm_receipt_items():
+    """Handle user confirmation of receipt items"""
+    app.logger.info("Processing receipt items confirmation")
+    
+    try:
+        data = request.json
+        items = data.get('items', [])
+        
+        if not items:
+            app.logger.error("No items provided for confirmation")
+            return jsonify({'error': 'No items provided'}), 400
+        
+        app.logger.info(f"Processing {len(items)} confirmed items")
+        
+        # Add confirmed items to inventory
+        for item in items:
+            try:
+                inventory_item = {
+                    'user_id': ObjectId(current_user.id),
+                    'name': item['name'],
+                    'quantity': float(item['quantity']),
+                    'unit': item['unit'],
+                    'date_added': datetime.utcnow()
+                }
+                
+                result = mongo.db.inventory.insert_one(inventory_item)
+                app.logger.info(f"Added item to inventory: {item['name']}")
+                
+            except Exception as item_error:
+                app.logger.error(f"Error adding item to inventory: {str(item_error)}")
+                continue
+        
+        app.logger.info("Successfully processed all confirmed items")
+        return jsonify({
+            'success': True,
+            'message': f'Successfully added {len(items)} items to inventory'
+        }), 200
+        
+    except Exception as e:
+        app.logger.error(f"Error confirming receipt items: {str(e)}")
+        app.logger.exception("Full traceback:")
+        return jsonify({
+            'error': 'Failed to confirm receipt items',
+            'details': str(e)
+        }), 500
 
 @app.route('/add_item', methods=['POST'])
 @login_required
