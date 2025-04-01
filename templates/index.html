@@ -1,146 +1,266 @@
 {% extends "base.html" %}
 
-{% block title %}Welcome - Grocery Recipe App{% endblock %}
+{% block title %}Edgair - Your Kitchen Assistant{% endblock %}
 
 {% block content %}
-<div class="row align-items-center py-5">
-    <div class="col-lg-6">
-        <h1 class="display-4 fw-bold mb-4">Smart Recipe Planning Made Easy</h1>
-        <p class="lead mb-4">Keep track of your groceries and discover delicious recipes based on what you have at home.</p>
+<main class="landing">
+    <section class="intro">
+        <h1 class="logo">Edgair</h1>
+        <p class="tagline">Your Kitchen Assistant</p>
         {% if not current_user.is_authenticated %}
-        <div class="d-grid gap-2 d-md-flex justify-content-md-start">
-            <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg px-4 me-md-2">Get Started</a>
-            <a href="{{ url_for('login') }}" class="btn btn-outline-secondary btn-lg px-4">Login</a>
-        </div>
-        {% else %}
-        <div class="d-grid gap-2 d-md-flex justify-content-md-start">
-            <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg px-4">Go to Dashboard</a>
+        <div class="cta">
+            <a href="{{ url_for('register') }}" class="btn btn-primary me-3">Get Started</a>
+            <a href="{{ url_for('login') }}" class="btn btn-outline-primary">Login</a>
         </div>
         {% endif %}
-    </div>
-    <div class="col-lg-6">
-        <div class="hero-placeholder rounded shadow">
-            <div class="hero-content">
-                <div class="hero-icon">
-                    <i class="fas fa-utensils fa-3x"></i>
-                </div>
-                <h3>Grocery Recipe App</h3>
-                <p>Your Smart Kitchen Assistant</p>
-            </div>
-        </div>
-    </div>
-</div>
+    </section>
 
-<div class="row py-5">
-    <div class="col-md-4">
-        <div class="card h-100">
-            <div class="card-body text-center">
-                <h3 class="card-title">Track Your Inventory</h3>
-                <p class="card-text">Keep an organized list of all your groceries with quantities and expiry dates.</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card h-100">
-            <div class="card-body text-center">
-                <h3 class="card-title">Get Recipe Suggestions</h3>
-                <p class="card-text">Discover recipes that match your available ingredients and dietary preferences.</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card h-100">
-            <div class="card-body text-center">
-                <h3 class="card-title">Reduce Food Waste</h3>
-                <p class="card-text">Make the most of your ingredients and minimize food waste with smart recipe planning.</p>
-            </div>
-        </div>
-    </div>
-</div>
+    <section class="features">
+        <div class="feature-grid">
+            <a href="{{ url_for('register') if not current_user.is_authenticated else url_for('dashboard') }}" class="feature-block">
+                <div class="block-content">
+                    <h2>Vision</h2>
+                    <div class="description">
+                        <p>Upload your grocery receipts and let AI handle your inventory. Automatic item recognition and tracking.</p>
+                    </div>
+                </div>
+            </a>
 
-<div class="row py-5 bg-light rounded">
-    <div class="col-12 text-center">
-        <h2 class="mb-4">How It Works</h2>
-        <div class="row">
-            <div class="col-md-3">
-                <div class="step">
-                    <div class="step-number">1</div>
-                    <h4>Add Items</h4>
-                    <p>Input your groceries with quantities and expiry dates</p>
+            <a href="{{ url_for('register') if not current_user.is_authenticated else url_for('dashboard') }}" class="feature-block">
+                <div class="block-content">
+                    <h2>Recipes</h2>
+                    <div class="description">
+                        <p>Get personalized recipe suggestions based on what you have. AI-powered meal planning that works for you.</p>
+                    </div>
                 </div>
-            </div>
-            <div class="col-md-3">
-                <div class="step">
-                    <div class="step-number">2</div>
-                    <h4>Set Preferences</h4>
-                    <p>Tell us about your dietary preferences and restrictions</p>
+            </a>
+
+            <a href="{{ url_for('register') if not current_user.is_authenticated else url_for('dashboard') }}" class="feature-block">
+                <div class="block-content">
+                    <h2>Zero Waste</h2>
+                    <div class="description">
+                        <p>Smart expiry tracking and ingredient suggestions to minimize food waste and maximize your groceries.</p>
+                    </div>
                 </div>
-            </div>
-            <div class="col-md-3">
-                <div class="step">
-                    <div class="step-number">3</div>
-                    <h4>Get Recipes</h4>
-                    <p>Browse recipes that match your available ingredients</p>
+            </a>
+
+            <a href="{{ url_for('register') if not current_user.is_authenticated else url_for('dashboard') }}" class="feature-block">
+                <div class="block-content">
+                    <h2>Chat</h2>
+                    <div class="description">
+                        <p>Ask Edgair anything about cooking, recipes, or your ingredients. Get instant, personalized answers.</p>
+                    </div>
                 </div>
-            </div>
-            <div class="col-md-3">
-                <div class="step">
-                    <div class="step-number">4</div>
-                    <h4>Cook & Enjoy</h4>
-                    <p>Follow the recipe instructions and enjoy your meal!</p>
-                </div>
-            </div>
+            </a>
         </div>
-    </div>
-</div>
+    </section>
+
+    <footer>
+        <p>&copy; 2025 Edgemere Solutions</p>
+    </footer>
+</main>
 {% endblock %}
 
 {% block extra_css %}
 <style>
-    .step {
-        padding: 20px;
-        text-align: center;
+    :root {
+        --primary: #00b894;
+        --primary-light: #00d2d3;
+        --bg: #ffffff;
+        --text: #2d3436;
+        --text-light: #636e72;
+        --shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+        --ease: cubic-bezier(0.4, 0, 0.2, 1);
     }
-    .step-number {
-        width: 40px;
-        height: 40px;
-        background-color: #007bff;
-        color: white;
-        border-radius: 50%;
+
+    body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    .landing {
+        min-height: 100vh;
         display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 15px;
-        font-weight: bold;
+        flex-direction: column;
+        padding: 0 24px;
+        background: linear-gradient(
+            to bottom,
+            #f8f9fa 0%,
+            #ffffff 100%
+        );
     }
-    .card {
-        transition: transform 0.2s;
-    }
-    .card:hover {
-        transform: translateY(-5px);
-    }
-    .hero-placeholder {
-        background: linear-gradient(135deg, #0d6efd, #0dcaf0);
-        height: 400px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
+
+    .intro {
         text-align: center;
+        padding: 120px 0 80px;
     }
-    .hero-content {
-        padding: 2rem;
+
+    .logo {
+        font-size: 72px;
+        font-weight: 800;
+        margin: 0;
+        line-height: 1.2;
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        display: inline-block;
+        padding: 0 16px;
     }
-    .hero-icon {
-        margin-bottom: 1.5rem;
+
+    .tagline {
+        font-size: 24px;
+        color: var(--text-light);
+        margin: 16px 0 32px;
+        font-weight: 400;
     }
-    .hero-content h3 {
-        margin-bottom: 1rem;
-        font-weight: bold;
+
+    .cta {
+        margin-top: 32px;
     }
-    .hero-content p {
-        opacity: 0.9;
-        font-size: 1.2rem;
+
+    .cta .btn {
+        padding: 16px 32px;
+        font-size: 18px;
+    }
+
+    .btn-outline-primary {
+        color: var(--primary);
+        border-color: var(--primary);
+    }
+
+    .btn-outline-primary:hover {
+        background: var(--primary-light);
+        border-color: var(--primary-light);
+        transform: translateY(-2px);
+    }
+
+    .features {
+        flex: 1;
+        max-width: 1200px;
+        margin: 0 auto;
+        width: 100%;
+        padding: 0 0 80px;
+    }
+
+    .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 32px;
+    }
+
+    .feature-block {
+        background: white;
+        border-radius: 16px;
+        padding: 40px;
+        text-decoration: none;
+        color: var(--text);
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s var(--ease);
+        display: flex;
+        height: 240px;
+    }
+
+    .feature-block:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow);
+        background: linear-gradient(135deg, 
+            rgba(0, 184, 148, 0.1),
+            rgba(0, 210, 211, 0.05)
+        );
+    }
+
+    .block-content {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .feature-block h2 {
+        font-size: 32px;
+        margin: 0;
+        font-weight: 700;
+        transition: transform 0.3s var(--ease);
+    }
+
+    .description {
+        opacity: 1;
+        transition: all 0.3s var(--ease);
+    }
+
+    .description p {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.6;
+        color: var(--text-light);
+    }
+
+    footer {
+        text-align: center;
+        padding: 24px;
+        color: var(--text-light);
+        font-size: 14px;
+    }
+
+    footer p {
+        margin: 0;
+    }
+
+    @media (max-width: 768px) {
+        .landing {
+            padding: 0 16px;
+        }
+
+        .intro {
+            padding: 100px 0 60px;
+        }
+
+        .logo {
+            font-size: 48px;
+        }
+
+        .tagline {
+            font-size: 20px;
+            margin: 16px 0 24px;
+        }
+
+        .cta {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            align-items: stretch;
+        }
+
+        .cta .btn {
+            width: 100%;
+        }
+
+        .feature-grid {
+            grid-template-columns: 1fr;
+            gap: 24px;
+        }
+
+        .feature-block {
+            height: auto;
+            min-height: 200px;
+            padding: 32px;
+        }
+
+        .feature-block h2 {
+            font-size: 28px;
+        }
+
+        .description p {
+            font-size: 16px;
+        }
     }
 </style>
 {% endblock %} 

@@ -1,63 +1,324 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - Grocery Recipe App{% endblock %}
+{% block title %}Dashboard - Edgair{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <div class="row">
-        <div class="col-md-6">
-            <div class="card shadow-sm mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">Upload Receipt</h5>
-                </div>
-                <div class="card-body">
-                    <div class="upload-section p-4 text-center border rounded" style="border-style: dashed !important;">
-                        <i class="fas fa-upload fa-2x mb-3 text-muted"></i>
-                        <p class="mb-2">Drag and drop your receipt here</p>
-                        <p class="text-muted mb-3">or</p>
-                        <input type="file" id="receipt-upload" class="d-none" accept=".jpg,.jpeg,.png,.gif,.heic,.heif">
-                        <button onclick="document.getElementById('receipt-upload').click()" class="btn btn-primary">
-                            Choose File
+<!-- Navigation Bar -->
+<nav class="navbar navbar-expand-lg fixed-top">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="{{ url_for('index') }}">Edgair</a>
+        <div class="navbar-nav ms-auto">
+            <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
+            <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+        </div>
+    </div>
+</nav>
+
+<!-- Main Content -->
+<div class="dashboard-container">
+    <div class="container-fluid py-4">
+        <div class="row g-4">
+            <!-- Recipe Suggestions Section -->
+            <div class="col-12">
+                <div class="card shadow-sm">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Recipe Suggestions</h5>
+                        <button onclick="refreshRecipes()" class="btn btn-primary btn-sm">
+                            <i class="fas fa-sync-alt"></i> Refresh
                         </button>
+                    </div>
+                    <div class="card-body p-4">
+                        <div id="recipe-suggestions" class="row g-4">
+                            <!-- Recipe cards will be loaded here -->
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <div class="col-md-6">
-            <div class="card shadow-sm">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Current Inventory</h5>
-                    <button onclick="deleteAllInventory()" class="btn btn-danger btn-sm">
-                        Clear All
-                    </button>
+            <!-- Left Column: Upload Receipt and Inventory -->
+            <div class="col-md-6">
+                <!-- Upload Receipt Section -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Upload Receipt</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="upload-section p-4 text-center">
+                            <i class="fas fa-receipt mb-3 text-primary" style="font-size: 2.5rem;"></i>
+                            <p class="mb-4">Add your receipt using one of these options:</p>
+                            <div class="d-grid gap-3">
+                                <button class="btn btn-primary" onclick="captureReceipt()">
+                                    <i class="fas fa-camera me-2"></i>Take Picture
+                                </button>
+                                <button class="btn btn-outline-primary" onclick="document.getElementById('fileInput').click()">
+                                    <i class="fas fa-folder-open me-2"></i>Choose File
+                                </button>
+                                <input type="file" id="fileInput" class="d-none" accept="image/*" capture="environment">
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div id="inventory-list">
-                        <!-- Inventory items will be loaded here -->
+
+                <!-- Current Inventory Section -->
+                <div class="card shadow-sm">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Current Inventory</h5>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addItemModal">
+                                <i class="fas fa-plus"></i> Add Item
+                            </button>
+                            <button onclick="deleteAllInventory()" class="btn btn-danger ms-2">
+                                Clear All
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="inventory-list" class="table-responsive">
+                            <!-- Inventory items will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Recipe Chat -->
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header">
+                        <h5 class="mb-0">Recipe Chat</h5>
+                    </div>
+                    <div class="card-body d-flex flex-column">
+                        <div id="chat-messages" class="flex-grow-1 mb-3" style="height: 500px; overflow-y: auto;">
+                            <div class="text-center text-muted p-4">
+                                <p class="mb-2">Ask me anything about recipes! For example:</p>
+                                <p class="mb-2">"What can I make in 15 minutes?"</p>
+                                <p class="mb-2">"I want something spicy with chicken"</p>
+                                <p class="mb-0">"Suggest a healthy vegetarian meal"</p>
+                            </div>
+                        </div>
+                        <form id="chat-form" class="d-flex gap-2">
+                            <input type="text" id="chat-input" class="form-control" placeholder="Type your recipe request...">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- Results section -->
-    <div id="extracted-items" class="mt-4"></div>
 </div>
 
+<!-- Add Item Modal -->
+<div class="modal fade" id="addItemModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Item</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addItemForm">
+                    <div class="mb-3">
+                        <label for="itemName" class="form-label">Item Name</label>
+                        <input type="text" class="form-control" id="itemName" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="itemQuantity" class="form-label">Quantity</label>
+                            <input type="number" class="form-control" id="itemQuantity" min="0" step="0.1" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="itemUnit" class="form-label">Unit</label>
+                            <select class="form-select" id="itemUnit" required>
+                                <optgroup label="Volume">
+                                    <option value="ml">Milliliter (ml)</option>
+                                    <option value="l">Liter (l)</option>
+                                    <option value="cup">Cup</option>
+                                    <option value="tbsp">Tablespoon</option>
+                                    <option value="tsp">Teaspoon</option>
+                                    <option value="oz">Fluid Ounce (oz)</option>
+                                </optgroup>
+                                <optgroup label="Weight">
+                                    <option value="g">Gram (g)</option>
+                                    <option value="kg">Kilogram (kg)</option>
+                                    <option value="lb">Pound (lb)</option>
+                                    <option value="oz">Ounce (oz)</option>
+                                </optgroup>
+                                <optgroup label="Count">
+                                    <option value="pcs">Pieces</option>
+                                    <option value="dozen">Dozen</option>
+                                </optgroup>
+                                <optgroup label="Other">
+                                    <option value="bunch">Bunch</option>
+                                    <option value="slice">Slice</option>
+                                    <option value="stick">Stick</option>
+                                    <option value="jar">Jar</option>
+                                    <option value="container">Container</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="addItem()">Add Item</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
 <style>
-.upload-section {
-    transition: all 0.3s ease;
-    min-height: 200px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+:root {
+    --primary: #00b894;
+    --primary-light: #00d2d3;
+    --danger: #ff7675;
+    --warning: #fdcb6e;
+    --success: #00b894;
+    --nav-height: 70px;
 }
 
-.upload-section.dragover {
-    background-color: rgba(0, 123, 255, 0.1);
-    border-color: #007bff !important;
+/* Navigation Styles */
+.navbar {
+    background: white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+    height: var(--nav-height);
+    padding: 0 24px;
+}
+
+.navbar-brand {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--primary) !important;
+    padding: 0;
+}
+
+.nav-link {
+    color: var(--text);
+    font-weight: 500;
+    padding: 8px 16px !important;
+    margin: 0 4px;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.nav-link:hover {
+    color: var(--primary);
+    background: rgba(0, 184, 148, 0.1);
+}
+
+/* Dashboard Container */
+.dashboard-container {
+    padding-top: var(--nav-height);
+    min-height: 100vh;
+    background: #f8f9fa;
+}
+
+/* Recipe Card Styles */
+.container-fluid {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+.card {
+    border: none;
+    border-radius: 16px;
+    overflow: hidden;
+    background: white;
+    height: 100%;
+}
+
+.recipe-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid rgba(0,0,0,0.05);
+}
+
+.recipe-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+}
+
+.recipe-card .card-body {
+    padding: 24px;
+}
+
+.recipe-card .card-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text);
+}
+
+.recipe-card .card-text {
+    color: var(--text-light);
+    margin-bottom: 16px;
+}
+
+.recipe-card ul {
+    padding-left: 20px;
+    margin-bottom: 16px;
+}
+
+.recipe-card li {
+    margin-bottom: 4px;
+    color: var(--text-light);
+}
+
+.recipe-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.btn-like {
+    background: var(--success);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.btn-dislike {
+    background: var(--danger);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.btn-new {
+    background: var(--warning);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.btn-like:hover, .btn-dislike:hover, .btn-new:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.1);
+}
+
+.btn-like:disabled {
+    background: var(--success);
+    opacity: 0.7;
+}
+
+.upload-section {
+    background: white;
+    border-radius: 16px;
+    border: 2px solid rgba(0,0,0,0.05);
+}
+
+.upload-section .btn {
+    padding: 12px 24px;
+    font-size: 16px;
 }
 
 #inventory-list {
@@ -65,13 +326,520 @@
     overflow-y: auto;
 }
 
-.item-adding {
-    background-color: rgba(0, 123, 255, 0.1);
-    transition: background-color 0.3s ease;
+.chat-message {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    border-radius: 12px;
+    max-width: 80%;
+}
+
+.chat-message.user {
+    background: var(--primary);
+    color: white;
+    margin-left: auto;
+    border-top-right-radius: 4px;
+}
+
+.chat-message.assistant {
+    background: #f8f9fa;
+    margin-right: auto;
+    border-top-left-radius: 4px;
+}
+
+.loading-dots span {
+    display: inline-block;
+    animation: dots 1.5s infinite;
+    font-size: 2rem;
+    line-height: 0;
+}
+
+@keyframes dots {
+    0%, 20% {
+        opacity: 0;
+        transform: translateY(0);
+    }
+    50% {
+        opacity: 1;
+        transform: translateY(-5px);
+    }
+    80%, 100% {
+        opacity: 0;
+        transform: translateY(0);
+    }
+}
+
+.modal-content {
+    border-radius: 16px;
+}
+
+.modal-header {
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+}
+
+@media (max-width: 768px) {
+    .container-fluid {
+        padding: 16px;
+    }
+    
+    .navbar {
+        padding: 0 16px;
+    }
+    
+    .recipe-card .card-body {
+        padding: 16px;
+    }
+    
+    .recipe-actions {
+        flex-wrap: wrap;
+    }
+    
+    .btn-like, .btn-dislike, .btn-new {
+        flex: 1;
+        text-align: center;
+        padding: 8px;
+        font-size: 14px;
+    }
+}
+
+.recipe-loading {
+    padding: 48px;
+    text-align: center;
+}
+
+.loading-animation {
+    display: inline-block;
+}
+
+.loading-dots {
+    margin-bottom: 16px;
+}
+
+.loading-dots span {
+    display: inline-block;
+    font-size: 32px;
+    color: var(--primary);
+    animation: bounce 1s infinite;
+    margin: 0 4px;
+}
+
+.loading-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.loading-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+.loading-message {
+    color: var(--text-light);
+    font-size: 18px;
+    transition: opacity 0.2s ease;
+}
+
+@keyframes bounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-12px);
+    }
+}
+
+.camera-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #000;
+    z-index: 1050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.camera-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#camera-preview {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.camera-controls {
+    position: absolute;
+    bottom: 32px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    padding: 16px;
+}
+
+.btn-circle {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
 }
 </style>
+{% endblock %}
 
+{% block extra_js %}
 <script>
+// Load recipes and inventory on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadInventory();
+    loadSuggestedRecipes();
+});
+
+// Recipe loading function
+async function loadSuggestedRecipes() {
+    // Show loading animation first
+    const container = document.getElementById('recipe-suggestions');
+    container.innerHTML = `
+        <div class="col-12">
+            <div class="recipe-loading text-center">
+                <div class="loading-animation">
+                    <div class="loading-dots">
+                        <span>•</span><span>•</span><span>•</span>
+                    </div>
+                    <div class="loading-message">Analyzing your ingredients...</div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Start cycling loading messages
+    const messages = [
+        "Analyzing your ingredients...",
+        "Discovering delicious combinations...",
+        "Crafting perfect recipes...",
+        "Adding a pinch of AI magic...",
+        "Almost ready to serve..."
+    ];
+    let messageIndex = 0;
+    const messageInterval = setInterval(() => {
+        messageIndex = (messageIndex + 1) % messages.length;
+        const messageEl = container.querySelector('.loading-message');
+        if (messageEl) {
+            messageEl.style.opacity = 0;
+            setTimeout(() => {
+                messageEl.textContent = messages[messageIndex];
+                messageEl.style.opacity = 1;
+            }, 200);
+        }
+    }, 2000);
+
+    try {
+        // Artificial delay to show the loading animation
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        const response = await fetch('/api/suggested_recipes');
+        const data = await response.json();
+        
+        // Clear the interval before updating content
+        clearInterval(messageInterval);
+        
+        if (data.recipes) {
+            container.innerHTML = data.recipes.map((recipe, index) => `
+                <div class="col-lg-4 col-md-6">
+                    <div class="card h-100 recipe-card">
+                        <div class="card-body">
+                            <h5 class="card-title">${recipe.name}</h5>
+                            <p class="card-text">${recipe.description}</p>
+                            <p class="card-text">
+                                <small class="text-muted">
+                                    <i class="fas fa-clock"></i> ${recipe.cooking_time}
+                                </small>
+                            </p>
+                            <div class="mt-3">
+                                <strong>From your inventory:</strong>
+                                <ul class="mb-2">
+                                    ${recipe.ingredients.from_inventory.map(item => `
+                                        <li>${item}</li>
+                                    `).join('')}
+                                </ul>
+                                <strong>Additional needed:</strong>
+                                <ul class="mb-0">
+                                    ${recipe.ingredients.additional_needed.map(item => `
+                                        <li>${item}</li>
+                                    `).join('')}
+                                </ul>
+                            </div>
+                            <div class="recipe-actions">
+                                <button class="btn-like" onclick="likeRecipe(${index})">
+                                    <i class="fas fa-thumbs-up"></i> Like
+                                </button>
+                                <button class="btn-dislike" onclick="dislikeRecipe(${index})">
+                                    <i class="fas fa-thumbs-down"></i> Dislike
+                                </button>
+                                <button class="btn-new" onclick="refreshRecipe(${index})">
+                                    <i class="fas fa-sync-alt"></i> New
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        clearInterval(messageInterval);
+        console.error('Error loading recipes:', error);
+    }
+}
+
+// Show Add Item Modal
+function showAddItemModal() {
+    const modal = new bootstrap.Modal(document.getElementById('addItemModal'));
+    modal.show();
+}
+
+// Add New Item
+async function addItem() {
+    const name = document.getElementById('itemName').value;
+    const quantity = parseFloat(document.getElementById('itemQuantity').value);
+    const unit = document.getElementById('itemUnit').value;
+
+    if (!name || !quantity || !unit) {
+        alert('Please fill in all required fields');
+        return;
+    }
+
+    // Disable the submit button and show loading state
+    const submitButton = document.querySelector('#addItemModal .btn-primary');
+    const originalText = submitButton.innerHTML;
+    submitButton.disabled = true;
+    submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Adding...';
+
+    try {
+        const response = await fetch('/api/inventory', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                name: name,
+                quantity: quantity,
+                unit: unit
+            })
+        });
+
+        if (response.ok) {
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addItemModal'));
+            modal.hide();
+            
+            // Reset form
+            document.getElementById('addItemForm').reset();
+            
+            // Refresh inventory immediately
+            await loadInventory();
+            
+            // Show success toast
+            const toastContainer = document.createElement('div');
+            toastContainer.style.position = 'fixed';
+            toastContainer.style.top = '1rem';
+            toastContainer.style.right = '1rem';
+            toastContainer.style.zIndex = '1050';
+            toastContainer.innerHTML = `
+                <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="toast-header bg-success text-white">
+                        <strong class="me-auto">Success</strong>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+                    </div>
+                    <div class="toast-body">
+                        ${name} has been added to your inventory.
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(toastContainer);
+            
+            // Remove toast after 3 seconds
+            setTimeout(() => {
+                toastContainer.remove();
+            }, 3000);
+        } else {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to add item');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert(error.message || 'Failed to add item');
+    } finally {
+        // Reset button state
+        submitButton.disabled = false;
+        submitButton.innerHTML = originalText;
+    }
+}
+
+// Recipe interaction functions
+async function likeRecipe(index) {
+    // TODO: Store preference and use for future suggestions
+    const button = event.target.closest('.btn-like');
+    button.innerHTML = '<i class="fas fa-check"></i> Liked!';
+    button.disabled = true;
+}
+
+async function dislikeRecipe(index) {
+    // TODO: Store preference and use for future suggestions
+    const card = event.target.closest('.recipe-card');
+    card.style.opacity = '0.5';
+}
+
+async function refreshRecipe(index) {
+    const card = event.target.closest('.col-lg-4');
+    card.innerHTML = `
+        <div class="card h-100 recipe-card">
+            <div class="card-body text-center">
+                <div class="loading-dots my-4">
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                </div>
+                <p class="text-muted">Finding a new recipe...</p>
+            </div>
+        </div>
+    `;
+    // TODO: Call API to get a new recipe suggestion
+    await loadSuggestedRecipes();
+}
+
+// Refresh recipes
+function refreshRecipes() {
+    const container = document.getElementById('recipe-suggestions');
+    container.innerHTML = `
+        <div class="col-12 text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    `;
+    loadSuggestedRecipes();
+}
+
+// Handle chat form submission
+document.getElementById('chat-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const input = document.getElementById('chat-input');
+    const query = input.value.trim();
+    if (!query) return;
+    
+    // Add user message
+    addChatMessage(query, 'user');
+    input.value = '';
+    
+    // Add loading animation
+    const loadingMessage = document.createElement('div');
+    loadingMessage.className = 'chat-message assistant';
+    loadingMessage.innerHTML = `
+        <div class="loading-dots">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+        </div>
+    `;
+    document.getElementById('chat-messages').appendChild(loadingMessage);
+    
+    try {
+        const response = await fetch('/api/chat_recipes', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ query: query })
+        });
+        
+        // Remove loading animation
+        loadingMessage.remove();
+        
+        const data = await response.json();
+        if (data.recipes) {
+            // Format and display recipes
+            const recipeText = data.recipes.map(recipe => `
+                <div class="recipe-suggestion mb-3">
+                    <h6>${recipe.name}</h6>
+                    <p>${recipe.description}</p>
+                    <p><strong>Cooking time:</strong> ${recipe.cooking_time}</p>
+                    <p><strong>From your inventory:</strong></p>
+                    <ul>
+                        ${recipe.ingredients.from_inventory.map(item => `<li>${item}</li>`).join('')}
+                    </ul>
+                    <p><strong>Additional ingredients needed:</strong></p>
+                    <ul>
+                        ${recipe.ingredients.additional_needed.map(item => `<li>${item}</li>`).join('')}
+                    </ul>
+                    <p><strong>Steps:</strong></p>
+                    <ol>
+                        ${recipe.steps.map(step => `<li>${step}</li>`).join('')}
+                    </ol>
+                </div>
+            `).join('<hr>');
+            
+            addChatMessage(recipeText, 'assistant');
+        } else {
+            addChatMessage('Sorry, I had trouble generating recipes. Please try again.', 'assistant');
+        }
+    } catch (error) {
+        // Remove loading animation
+        loadingMessage.remove();
+        console.error('Error:', error);
+        addChatMessage('Sorry, something went wrong. Please try again.', 'assistant');
+    }
+});
+
+// Update the chat message handling
+function addChatMessage(message, role) {
+    const chatMessages = document.getElementById('chat-messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chat-message ${role} collapsed`;
+    
+    if (role === 'user') {
+        messageDiv.innerHTML = `
+            <div class="message-content">
+                ${message}
+            </div>
+        `;
+    } else {
+        messageDiv.innerHTML = `
+            <div class="message-content">
+                ${message}
+            </div>
+            <div class="expand-indicator">
+                <i class="fas fa-chevron-down"></i> Click to expand
+            </div>
+        `;
+        
+        messageDiv.addEventListener('click', () => {
+            messageDiv.classList.toggle('collapsed');
+            messageDiv.classList.toggle('expanded');
+            const indicator = messageDiv.querySelector('.expand-indicator');
+            if (messageDiv.classList.contains('expanded')) {
+                indicator.innerHTML = '<i class="fas fa-chevron-up"></i> Click to collapse';
+            } else {
+                indicator.innerHTML = '<i class="fas fa-chevron-down"></i> Click to expand';
+            }
+        });
+    }
+    
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
 // Load inventory on page load
 document.addEventListener('DOMContentLoaded', function() {
     loadInventory();
@@ -159,6 +927,155 @@ async function deleteAllInventory() {
             alert('Error deleting inventory');
         }
     }
+}
+
+// Handle receipt capture
+async function captureReceipt() {
+    try {
+        // Check if we have camera access
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        
+        // Create camera UI
+        const modal = document.createElement('div');
+        modal.className = 'camera-modal';
+        modal.innerHTML = `
+            <div class="camera-container">
+                <video id="camera-preview" autoplay playsinline></video>
+                <div class="camera-controls">
+                    <button class="btn btn-light btn-circle" onclick="closeCamera()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                    <button class="btn btn-primary btn-circle" onclick="takePhoto()">
+                        <i class="fas fa-camera"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // Set up video stream
+        const video = document.getElementById('camera-preview');
+        video.srcObject = stream;
+        
+    } catch (error) {
+        console.error('Error accessing camera:', error);
+        if (error.name === 'NotAllowedError') {
+            alert('Please allow camera access to take pictures of receipts. You can change this in your browser settings.');
+        } else {
+            alert('Error accessing camera. Please try uploading a file instead.');
+        }
+    }
+}
+
+function closeCamera() {
+    const modal = document.querySelector('.camera-modal');
+    if (modal) {
+        const video = document.getElementById('camera-preview');
+        const stream = video.srcObject;
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+        modal.remove();
+    }
+}
+
+async function takePhoto() {
+    const video = document.getElementById('camera-preview');
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    // Draw video frame to canvas
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    
+    try {
+        // Convert to blob
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg'));
+        
+        // Create form data
+        const formData = new FormData();
+        formData.append('receipt', blob, 'receipt.jpg');
+        
+        // Close camera
+        closeCamera();
+        
+        // Show loading state
+        showUploadingState();
+        
+        // Upload the image
+        const response = await fetch('/api/upload_receipt', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            showSuccessMessage('Receipt uploaded successfully!');
+            // Refresh inventory or handle success
+            await loadInventory();
+        } else {
+            throw new Error('Failed to upload receipt');
+        }
+    } catch (error) {
+        console.error('Error uploading receipt:', error);
+        showErrorMessage('Failed to upload receipt. Please try again.');
+    } finally {
+        hideUploadingState();
+    }
+}
+
+function showUploadingState() {
+    const uploadSection = document.querySelector('.upload-section');
+    uploadSection.innerHTML = `
+        <div class="text-center">
+            <div class="spinner-border text-primary mb-3" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mb-0">Processing your receipt...</p>
+        </div>
+    `;
+}
+
+function hideUploadingState() {
+    // Reset the upload section to its original state
+    loadUploadSection();
+}
+
+function showSuccessMessage(message) {
+    const toast = document.createElement('div');
+    toast.className = 'toast-container position-fixed top-0 end-0 p-3';
+    toast.style.zIndex = '1050';
+    toast.innerHTML = `
+        <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header bg-success text-white">
+                <strong class="me-auto">Success</strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body">
+                ${message}
+            </div>
+        </div>
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+function showErrorMessage(message) {
+    const toast = document.createElement('div');
+    toast.className = 'toast-container position-fixed top-0 end-0 p-3';
+    toast.style.zIndex = '1050';
+    toast.innerHTML = `
+        <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header bg-danger text-white">
+                <strong class="me-auto">Error</strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body">
+                ${message}
+            </div>
+        </div>
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
 }
 </script>
 {% endblock %} 
