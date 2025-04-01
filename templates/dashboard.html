@@ -53,10 +53,19 @@
                                 <button class="btn btn-outline-primary" onclick="document.getElementById('fileInput').click()">
                                     <i class="fas fa-folder-open me-2"></i>Choose File
                                 </button>
-                                <input type="file" id="fileInput" class="d-none" accept="image/*" capture="environment">
+                                <input type="file" id="fileInput" class="d-none" accept="image/*" capture="environment" onchange="handleFileUpload(event)">
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Loading State -->
+                <div id="loadingState" class="upload-section p-4 text-center d-none">
+                    <div class="loading-animation mb-3">
+                        <div class="dot-pulse"></div>
+                    </div>
+                    <p id="loadingMessage" class="mb-2">Analyzing your receipt...</p>
+                    <p class="text-muted small">This may take a few moments</p>
                 </div>
 
                 <!-- Current Inventory Section -->
@@ -494,6 +503,68 @@
     align-items: center;
     justify-content: center;
     font-size: 24px;
+}
+
+.loading-animation {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 50px;
+}
+
+.dot-pulse {
+    position: relative;
+    left: -9999px;
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background-color: var(--primary);
+    color: var(--primary);
+    box-shadow: 9999px 0 0 -5px;
+    animation: dot-pulse 1.5s infinite linear;
+    animation-delay: 0.25s;
+}
+
+.dot-pulse::before, .dot-pulse::after {
+    content: '';
+    display: inline-block;
+    position: absolute;
+    top: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background-color: var(--primary);
+    color: var(--primary);
+}
+
+.dot-pulse::before {
+    box-shadow: 9984px 0 0 -5px;
+    animation: dot-pulse-before 1.5s infinite linear;
+    animation-delay: 0s;
+}
+
+.dot-pulse::after {
+    box-shadow: 10014px 0 0 -5px;
+    animation: dot-pulse-after 1.5s infinite linear;
+    animation-delay: 0.5s;
+}
+
+@keyframes dot-pulse-before {
+    0% { box-shadow: 9984px 0 0 -5px; }
+    30% { box-shadow: 9984px 0 0 2px; }
+    60%, 100% { box-shadow: 9984px 0 0 -5px; }
+}
+
+@keyframes dot-pulse {
+    0% { box-shadow: 9999px 0 0 -5px; }
+    30% { box-shadow: 9999px 0 0 2px; }
+    60%, 100% { box-shadow: 9999px 0 0 -5px; }
+}
+
+@keyframes dot-pulse-after {
+    0% { box-shadow: 10014px 0 0 -5px; }
+    30% { box-shadow: 10014px 0 0 2px; }
+    60%, 100% { box-shadow: 10014px 0 0 -5px; }
 }
 </style>
 {% endblock %}
@@ -979,6 +1050,83 @@ function closeCamera() {
     }
 }
 
+// Array of loading messages
+const loadingMessages = [
+    "Scanning receipt items...",
+    "Analyzing ingredients...",
+    "Processing quantities...",
+    "Updating your inventory...",
+    "Almost done..."
+];
+
+let messageIndex = 0;
+let messageInterval;
+
+function showLoadingState() {
+    const uploadSection = document.querySelector('.upload-section:not(#loadingState)');
+    const loadingState = document.getElementById('loadingState');
+    
+    uploadSection.classList.add('d-none');
+    loadingState.classList.remove('d-none');
+    
+    // Start cycling through messages
+    messageIndex = 0;
+    updateLoadingMessage();
+    messageInterval = setInterval(updateLoadingMessage, 3000);
+}
+
+function hideLoadingState() {
+    const uploadSection = document.querySelector('.upload-section:not(#loadingState)');
+    const loadingState = document.getElementById('loadingState');
+    
+    uploadSection.classList.remove('d-none');
+    loadingState.classList.add('d-none');
+    
+    // Clear message interval
+    if (messageInterval) {
+        clearInterval(messageInterval);
+        messageInterval = null;
+    }
+}
+
+function updateLoadingMessage() {
+    const messageElement = document.getElementById('loadingMessage');
+    messageElement.textContent = loadingMessages[messageIndex];
+    messageIndex = (messageIndex + 1) % loadingMessages.length;
+}
+
+async function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    try {
+        showLoadingState();
+
+        const formData = new FormData();
+        formData.append('receipt', file);
+
+        const response = await fetch('/api/upload_receipt', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok) {
+            showSuccessMessage('Receipt processed successfully!');
+            await loadInventory();
+        } else {
+            throw new Error('Failed to process receipt');
+        }
+    } catch (error) {
+        console.error('Error processing receipt:', error);
+        showErrorMessage('Failed to process receipt. Please try again.');
+    } finally {
+        hideLoadingState();
+        // Reset file input
+        event.target.value = '';
+    }
+}
+
+// Update the takePhoto function to include loading state
 async function takePhoto() {
     const video = document.getElementById('camera-preview');
     const canvas = document.createElement('canvas');
@@ -1000,7 +1148,7 @@ async function takePhoto() {
         closeCamera();
         
         // Show loading state
-        showUploadingState();
+        showLoadingState();
         
         // Upload the image
         const response = await fetch('/api/upload_receipt', {
@@ -1009,35 +1157,17 @@ async function takePhoto() {
         });
         
         if (response.ok) {
-            showSuccessMessage('Receipt uploaded successfully!');
-            // Refresh inventory or handle success
+            showSuccessMessage('Receipt processed successfully!');
             await loadInventory();
         } else {
-            throw new Error('Failed to upload receipt');
+            throw new Error('Failed to process receipt');
         }
     } catch (error) {
-        console.error('Error uploading receipt:', error);
-        showErrorMessage('Failed to upload receipt. Please try again.');
+        console.error('Error processing receipt:', error);
+        showErrorMessage('Failed to process receipt. Please try again.');
     } finally {
-        hideUploadingState();
+        hideLoadingState();
     }
-}
-
-function showUploadingState() {
-    const uploadSection = document.querySelector('.upload-section');
-    uploadSection.innerHTML = `
-        <div class="text-center">
-            <div class="spinner-border text-primary mb-3" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <p class="mb-0">Processing your receipt...</p>
-        </div>
-    `;
-}
-
-function hideUploadingState() {
-    // Reset the upload section to its original state
-    loadUploadSection();
 }
 
 function showSuccessMessage(message) {
