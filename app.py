@@ -288,10 +288,7 @@ def process_receipt(receipt_path):
             input=[{
                 "role": "user",
                 "content": [
-                    {
-                        "type": "input_text",
-                        "text": "Please analyze this receipt and extract all grocery items. For each item, provide: name, quantity, unit, and price. Format the response as a JSON array with these fields. Example: [{\"name\": \"Milk\", \"quantity\": 1, \"unit\": \"gallon\", \"price\": 3.99}]"
-                    },
+                    {"type": "input_text", "text": "Please analyze this receipt and extract all grocery items. For each item, provide: name, quantity, unit, and price. Format the response as a JSON array with these fields. Example: [{\"name\": \"Milk\", \"quantity\": 1, \"unit\": \"gallon\", \"price\": 3.99}]. Return ONLY the JSON array, no other text or formatting."},
                     {
                         "type": "input_image",
                         "image_url": f"data:image/jpeg;base64,{base64_image}",
@@ -304,9 +301,20 @@ def process_receipt(receipt_path):
         # Log the response for debugging
         app.logger.info(f"OpenAI API Response: {response.output_text}")
         
+        # Clean up the response text
+        clean_response = response.output_text.strip()
+        
+        # Remove markdown formatting if present
+        if clean_response.startswith("```"):
+            clean_response = clean_response.split("\n", 1)[1]  # Remove first line
+        if clean_response.endswith("```"):
+            clean_response = clean_response.rsplit("\n", 1)[0]  # Remove last line
+        if clean_response.startswith("json"):
+            clean_response = clean_response.split("\n", 1)[1]  # Remove json tag
+            
         # Parse the response
         try:
-            items = json.loads(response.output_text)
+            items = json.loads(clean_response)
             if not isinstance(items, list):
                 raise ValueError("Response is not a list of items")
             
