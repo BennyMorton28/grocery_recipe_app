@@ -72,6 +72,9 @@
                 </div>
 
                 <!-- Add this right after the receipt upload section -->
+                <div id="error-message" class="alert alert-danger" style="display: none;"></div>
+
+                <!-- Add this right after the receipt upload section -->
                 <div id="debugPanel" class="debug-panel" style="display: none;">
                     <div class="debug-content">
                         <h4>Debug Information</h4>
@@ -1384,11 +1387,15 @@ function showSuccess(message) {
 function showError(message) {
     showDebug(`Error: ${message}`);
     const errorDiv = document.getElementById('error-message');
-    errorDiv.textContent = message;
-    errorDiv.style.display = 'block';
-    setTimeout(() => {
-        errorDiv.style.display = 'none';
-    }, 5000);
+    if (errorDiv) {
+        errorDiv.textContent = message;
+        errorDiv.style.display = 'block';
+        setTimeout(() => {
+            errorDiv.style.display = 'none';
+        }, 5000);
+    } else {
+        console.error('Error message div not found:', message);
+    }
 }
 
 function showDebug(message) {

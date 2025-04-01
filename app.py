@@ -318,23 +318,21 @@ def process_receipt(receipt_path):
             if not isinstance(items, list):
                 raise ValueError("Response is not a list of items")
             
-            # Validate and clean each item
+            # Clean and validate each item
             cleaned_items = []
             for item in items:
-                if not all(k in item for k in ['name', 'quantity', 'unit', 'price']):
-                    app.logger.warning(f"Item missing required fields: {item}")
-                    continue
-                
-                # Clean and validate the item
-                cleaned_item = {
-                    'name': clean_item_name(item['name']),
-                    'quantity': float(item['quantity']),
-                    'unit': clean_unit(item['unit']),
-                    'price': float(item['price'])
-                }
-                
-                if cleaned_item['name'] and cleaned_item['quantity'] > 0:
+                try:
+                    # Clean and validate the item
+                    cleaned_item = {
+                        'name': clean_item_name(item.get('name', '')),
+                        'quantity': clean_quantity(item.get('quantity', 0)),
+                        'unit': clean_unit(item.get('unit', '')),
+                        'price': clean_price(item.get('price', 0))
+                    }
                     cleaned_items.append(cleaned_item)
+                except Exception as e:
+                    app.logger.error(f"Error cleaning item {item}: {str(e)}")
+                    continue
             
             app.logger.info(f"Successfully processed {len(cleaned_items)} items from receipt")
             return cleaned_items
