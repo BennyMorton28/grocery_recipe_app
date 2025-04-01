@@ -308,14 +308,24 @@ def clean_price(price):
 def process_receipt(receipt_path):
     """Process receipt image using OpenAI Vision API"""
     try:
-        # Encode image to base64
+        app.logger.info(f"Starting receipt processing for file: {receipt_path}")
+        
+        # Step 1: Check if file exists
+        if not os.path.exists(receipt_path):
+            app.logger.error(f"File not found: {receipt_path}")
+            raise FileNotFoundError(f"File not found: {receipt_path}")
+            
+        # Step 2: Encode image to base64
+        app.logger.info("Encoding image to base64...")
         with open(receipt_path, "rb") as image_file:
             base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+        app.logger.info("Image encoded successfully")
         
-        # Prepare the API request
-        response = client.responses.create(
-            model="gpt-4o",
-            input=[{
+        # Step 3: Prepare the API request
+        app.logger.info("Preparing OpenAI API request...")
+        request_data = {
+            "model": "gpt-4o",
+            "input": [{
                 "role": "user",
                 "content": [
                     {
@@ -329,12 +339,19 @@ def process_receipt(receipt_path):
                     }
                 ]
             }]
-        )
+        }
+        app.logger.info("API request prepared")
         
-        # Log the response for debugging
-        app.logger.info(f"OpenAI API Response: {response.output_text}")
+        # Step 4: Make the API call
+        app.logger.info("Making OpenAI API call...")
+        response = client.responses.create(**request_data)
+        app.logger.info("API call completed successfully")
         
-        # Clean up the response text
+        # Step 5: Log the raw response
+        app.logger.info(f"Raw OpenAI API Response: {response.output_text}")
+        
+        # Step 6: Clean up the response text
+        app.logger.info("Cleaning response text...")
         clean_response = response.output_text.strip()
         
         # Remove markdown formatting if present
@@ -345,16 +362,23 @@ def process_receipt(receipt_path):
         if clean_response.startswith("json"):
             clean_response = clean_response.split("\n", 1)[1]  # Remove json tag
             
-        # Parse the response
+        app.logger.info(f"Cleaned response: {clean_response}")
+        
+        # Step 7: Parse the response
+        app.logger.info("Parsing response...")
         try:
             items = json.loads(clean_response)
             if not isinstance(items, list):
+                app.logger.error("Response is not a list of items")
                 raise ValueError("Response is not a list of items")
             
-            # Clean and validate each item
+            app.logger.info(f"Found {len(items)} items in response")
+            
+            # Step 8: Clean and validate each item
             cleaned_items = []
             for item in items:
                 try:
+                    app.logger.info(f"Processing item: {item}")
                     # Clean and validate the item
                     cleaned_item = {
                         'name': clean_item_name(item.get('name', '')),
@@ -363,6 +387,7 @@ def process_receipt(receipt_path):
                         'price': clean_price(item.get('price', 0))
                     }
                     cleaned_items.append(cleaned_item)
+                    app.logger.info(f"Cleaned item: {cleaned_item}")
                 except Exception as e:
                     app.logger.error(f"Error cleaning item {item}: {str(e)}")
                     continue
@@ -377,11 +402,13 @@ def process_receipt(receipt_path):
             
     except Exception as e:
         app.logger.error(f"Error processing receipt: {str(e)}")
+        app.logger.exception("Full traceback:")
         raise
     finally:
         # Clean up the uploaded file
         try:
             os.remove(receipt_path)
+            app.logger.info(f"Cleaned up temporary file: {receipt_path}")
         except Exception as e:
             app.logger.warning(f"Failed to remove temporary file: {str(e)}")
 
