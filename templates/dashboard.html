@@ -71,6 +71,14 @@
                     </div>
                 </div>
 
+                <!-- Add this right after the receipt upload section -->
+                <div id="debugPanel" class="debug-panel" style="display: none;">
+                    <div class="debug-content">
+                        <h4>Debug Information</h4>
+                        <pre id="debugOutput"></pre>
+                    </div>
+                </div>
+
                 <!-- Current Inventory Section -->
                 <div class="card shadow-sm">
                     <div class="card-header d-flex justify-content-between align-items-center">
@@ -615,6 +623,32 @@
     color: #333;
     margin-top: 15px;
 }
+
+.debug-panel {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 300px;
+    max-height: 200px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 10px;
+    border-radius: 5px;
+    font-family: monospace;
+    font-size: 12px;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+.debug-content {
+    width: 100%;
+}
+
+.debug-content pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
 </style>
 {% endblock %}
 
@@ -1158,6 +1192,7 @@ function handleFileUpload(event) {
     if (!file) return;
 
     showReceiptLoading();
+    showDebug(`Starting receipt upload: ${file.name}`);
 
     const formData = new FormData();
     formData.append('receipt', file);
@@ -1166,8 +1201,12 @@ function handleFileUpload(event) {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        showDebug(`Response status: ${response.status}`);
+        return response.json();
+    })
     .then(data => {
+        showDebug(`Response data: ${JSON.stringify(data, null, 2)}`);
         hideReceiptLoading();
         if (data.success) {
             showReceiptConfirmation(data.items);
@@ -1176,6 +1215,7 @@ function handleFileUpload(event) {
         }
     })
     .catch(error => {
+        showDebug(`Error: ${error.message}`);
         hideReceiptLoading();
         showError('Error uploading receipt: ' + error.message);
     });
@@ -1224,6 +1264,7 @@ function takePhoto() {
 }
 
 function showReceiptConfirmation(items) {
+    showDebug(`Received ${items.length} items for confirmation`);
     hideReceiptLoading();
     
     // Create confirmation modal
@@ -1246,21 +1287,19 @@ function showReceiptConfirmation(items) {
                                     <th>Quantity</th>
                                     <th>Unit</th>
                                     <th>Price</th>
-                                    <th>Action</th>
+                                    <th>Select</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                ${items.map((item, index) => `
+                                ${items.map(item => `
                                     <tr>
                                         <td>${item.name}</td>
                                         <td>${item.quantity}</td>
                                         <td>${item.unit}</td>
                                         <td>$${item.price.toFixed(2)}</td>
                                         <td>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" 
-                                                       id="item${index}" checked>
-                                            </div>
+                                            <input type="checkbox" class="form-check-input item-select" 
+                                                   checked data-item='${JSON.stringify(item)}'>
                                         </td>
                                     </tr>
                                 `).join('')}
@@ -1270,7 +1309,7 @@ function showReceiptConfirmation(items) {
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="confirmReceiptItems()">Confirm Items</button>
+                    <button type="button" class="btn btn-primary" onclick="confirmReceiptItems()">Add Selected Items</button>
                 </div>
             </div>
         </div>
@@ -1280,68 +1319,46 @@ function showReceiptConfirmation(items) {
     const modalInstance = new bootstrap.Modal(modal);
     modalInstance.show();
     
-    // Clean up modal when hidden
     modal.addEventListener('hidden.bs.modal', function () {
         document.body.removeChild(modal);
     });
 }
 
 function confirmReceiptItems() {
-    const modal = document.getElementById('receiptConfirmationModal');
-    const checkboxes = modal.querySelectorAll('input[type="checkbox"]');
-    const items = [];
+    showDebug('Starting receipt items confirmation');
+    const selectedItems = Array.from(document.querySelectorAll('.item-select:checked'))
+        .map(checkbox => JSON.parse(checkbox.dataset.item));
     
-    // Get all checked items
-    checkboxes.forEach((checkbox, index) => {
-        if (checkbox.checked) {
-            const row = checkbox.closest('tr');
-            const cells = row.cells;
-            items.push({
-                name: cells[0].textContent,
-                quantity: parseFloat(cells[1].textContent),
-                unit: cells[2].textContent,
-                price: parseFloat(cells[3].textContent.replace('$', ''))
-            });
-        }
-    });
-    
-    if (items.length === 0) {
-        showError('Please select at least one item to add');
-        return;
-    }
-    
-    // Show loading state
-    showLoadingState();
-    
-    // Send confirmed items to server
+    showDebug(`Selected ${selectedItems.length} items: ${JSON.stringify(selectedItems, null, 2)}`);
+
     fetch('/api/confirm_receipt_items', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ items })
+        body: JSON.stringify({ items: selectedItems })
     })
-    .then(response => response.json())
+    .then(response => {
+        showDebug(`Response status: ${response.status}`);
+        return response.json();
+    })
     .then(data => {
+        showDebug(`Response data: ${JSON.stringify(data, null, 2)}`);
         if (data.success) {
-            // Close modal
+            showSuccess(data.message);
+            // Close the modal
+            const modal = document.getElementById('receiptConfirmationModal');
             const modalInstance = bootstrap.Modal.getInstance(modal);
             modalInstance.hide();
-            
-            // Refresh inventory
-            refreshInventory();
-            
-            // Show success message
-            showSuccess(data.message);
+            // Refresh the page to show updated inventory
+            setTimeout(() => window.location.reload(), 1000);
         } else {
             showError(data.error || 'Failed to confirm items');
         }
     })
     .catch(error => {
+        showDebug(`Error: ${error.message}`);
         showError('Error confirming items: ' + error.message);
-    })
-    .finally(() => {
-        hideLoadingState();
     });
 }
 
@@ -1365,22 +1382,21 @@ function showSuccess(message) {
 }
 
 function showError(message) {
-    const toast = document.createElement('div');
-    toast.className = 'toast-container position-fixed top-0 end-0 p-3';
-    toast.style.zIndex = '1050';
-    toast.innerHTML = `
-        <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
-            <div class="toast-header bg-danger text-white">
-                <strong class="me-auto">Error</strong>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-            </div>
-            <div class="toast-body">
-                ${message}
-            </div>
-        </div>
-    `;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    showDebug(`Error: ${message}`);
+    const errorDiv = document.getElementById('error-message');
+    errorDiv.textContent = message;
+    errorDiv.style.display = 'block';
+    setTimeout(() => {
+        errorDiv.style.display = 'none';
+    }, 5000);
+}
+
+function showDebug(message) {
+    const debugPanel = document.getElementById('debugPanel');
+    const debugOutput = document.getElementById('debugOutput');
+    debugOutput.textContent += message + '\n';
+    debugPanel.style.display = 'block';
+    debugOutput.scrollTop = debugOutput.scrollHeight;
 }
 </script>
 {% endblock %} 
