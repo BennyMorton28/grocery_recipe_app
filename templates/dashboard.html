@@ -59,13 +59,16 @@
                     </div>
                 </div>
 
-                <!-- Loading State -->
-                <div id="loadingState" class="upload-section p-4 text-center d-none">
-                    <div class="loading-animation mb-3">
-                        <div class="dot-pulse"></div>
+                <!-- Add this right after the receipt upload section -->
+                <div id="receiptLoadingState" class="loading-state" style="display: none;">
+                    <div class="loading-content">
+                        <div class="loading-dots">
+                            <div class="dot"></div>
+                            <div class="dot"></div>
+                            <div class="dot"></div>
+                        </div>
+                        <div class="loading-message">Processing receipt...</div>
                     </div>
-                    <p id="loadingMessage" class="mb-2">Analyzing your receipt...</p>
-                    <p class="text-muted small">This may take a few moments</p>
                 </div>
 
                 <!-- Current Inventory Section -->
@@ -565,6 +568,52 @@
     0% { box-shadow: 10014px 0 0 -5px; }
     30% { box-shadow: 10014px 0 0 2px; }
     60%, 100% { box-shadow: 10014px 0 0 -5px; }
+}
+
+.loading-state {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.9);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.loading-content {
+    text-align: center;
+}
+
+.loading-dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.dot {
+    width: 12px;
+    height: 12px;
+    background-color: #007bff;
+    border-radius: 50%;
+    animation: bounce 1.4s infinite ease-in-out;
+}
+
+.dot:nth-child(1) { animation-delay: -0.32s; }
+.dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+}
+
+.loading-message {
+    font-size: 1.2em;
+    color: #333;
+    margin-top: 15px;
 }
 </style>
 {% endblock %}
@@ -1095,12 +1144,20 @@ function updateLoadingMessage() {
     messageIndex = (messageIndex + 1) % loadingMessages.length;
 }
 
+function showReceiptLoading() {
+    document.getElementById('receiptLoadingState').style.display = 'flex';
+}
+
+function hideReceiptLoading() {
+    document.getElementById('receiptLoadingState').style.display = 'none';
+}
+
+// Update the handleFileUpload function
 function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    // Show loading state
-    showLoadingState();
+    showReceiptLoading();
 
     const formData = new FormData();
     formData.append('receipt', file);
@@ -1111,22 +1168,63 @@ function handleFileUpload(event) {
     })
     .then(response => response.json())
     .then(data => {
+        hideReceiptLoading();
         if (data.success) {
-            // Show the items for confirmation
             showReceiptConfirmation(data.items);
         } else {
-            hideLoadingState();
             showError(data.error || 'Failed to process receipt');
         }
     })
     .catch(error => {
-        hideLoadingState();
+        hideReceiptLoading();
         showError('Error uploading receipt: ' + error.message);
     });
 }
 
+// Update the takePhoto function
+function takePhoto() {
+    const video = document.getElementById('camera-preview');
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    // Draw video frame to canvas
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    
+    // Convert to blob
+    canvas.toBlob(blob => {
+        // Create form data
+        const formData = new FormData();
+        formData.append('receipt', blob, 'receipt.jpg');
+        
+        // Close camera
+        closeCamera();
+        
+        showReceiptLoading();
+        
+        // Upload the image
+        fetch('/api/upload_receipt', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideReceiptLoading();
+            if (data.success) {
+                showReceiptConfirmation(data.items);
+            } else {
+                showError(data.error || 'Failed to process receipt');
+            }
+        })
+        .catch(error => {
+            hideReceiptLoading();
+            showError('Error uploading receipt: ' + error.message);
+        });
+    }, 'image/jpeg');
+}
+
 function showReceiptConfirmation(items) {
-    hideLoadingState();
+    hideReceiptLoading();
     
     // Create confirmation modal
     const modal = document.createElement('div');
