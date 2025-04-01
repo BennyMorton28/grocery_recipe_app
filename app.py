@@ -13,6 +13,8 @@ import re
 from dotenv import load_dotenv
 from openai import OpenAI
 import json
+from flask_pymongo import PyMongo
+from bson.objectid import ObjectId
 
 # Common grocery item categories and their patterns
 GROCERY_CATEGORIES = {
@@ -143,11 +145,12 @@ KITCHEN_TOOLS = {
 }
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.urandom(24)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///grocery_app.db'
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///grocery_recipe.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config["MONGO_URI"] = os.getenv("MONGODB_URI")
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -156,15 +159,17 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'heic', 'heif'}
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
-login_manager = LoginManager()
-login_manager.init_app(app)
+login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
 # Load environment variables
 load_dotenv()
 
 # Initialize OpenAI client
-client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+client = OpenAI()  # This will automatically use OPENAI_API_KEY from environment
+
+# Initialize MongoDB
+mongo = PyMongo(app)
 
 # Database Models
 class User(UserMixin, db.Model):
@@ -231,7 +236,10 @@ class ChatMessage(db.Model):
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    user_data = mongo.db.users.find_one({"_id": ObjectId(user_id)})
+    if user_data:
+        return User(user_data)
+    return None
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -378,41 +386,43 @@ def register():
         username = request.form.get('username')
         email = request.form.get('email')
         password = request.form.get('password')
-        cooking_methods = request.form.getlist('cooking_methods')
-        kitchen_tools = request.form.getlist('kitchen_tools')
         
-        if User.query.filter_by(username=username).first():
-            flash('Username already exists', 'error')
+        # Check if username or email already exists
+        if mongo.db.users.find_one({"$or": [{"username": username}, {"email": email}]}):
+            flash('Username or email already exists', 'error')
             return redirect(url_for('register'))
-            
-        user = User(
-            username=username,
-            email=email,
-            password_hash=generate_password_hash(password),
-            cooking_methods=cooking_methods,
-            kitchen_tools=kitchen_tools
-        )
-        db.session.add(user)
-        db.session.commit()
+        
+        # Create new user
+        user_data = {
+            "username": username,
+            "email": email,
+            "password_hash": generate_password_hash(password),
+            "cooking_methods": [],
+            "kitchen_tools": [],
+            "preferences": {},
+            "date_created": datetime.utcnow()
+        }
+        
+        mongo.db.users.insert_one(user_data)
         flash('Registration successful! Please login.', 'success')
         return redirect(url_for('login'))
     
-    return render_template('register.html', 
-                         cooking_methods=COOKING_METHODS, 
-                         kitchen_tools=KITCHEN_TOOLS)
+    return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        user = User.query.filter_by(username=username).first()
         
-        if user and check_password_hash(user.password_hash, password):
+        user_data = mongo.db.users.find_one({"username": username})
+        
+        if user_data and check_password_hash(user_data['password_hash'], password):
+            user = User(user_data)
             login_user(user)
             flash('Login successful!', 'success')
             return redirect(url_for('dashboard'))
-            
+        
         flash('Invalid username or password', 'error')
         return redirect(url_for('login'))
     
@@ -422,14 +432,14 @@ def login():
 @login_required
 def logout():
     logout_user()
-    flash('You have been logged out.', 'info')
-    return redirect(url_for('index'))
+    return redirect(url_for('login'))
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    inventory = InventoryItem.query.filter_by(user_id=current_user.id).all()
-    receipts = Receipt.query.filter_by(user_id=current_user.id).order_by(Receipt.upload_date.desc()).all()
+    # Get user's inventory and receipts from MongoDB
+    inventory = list(mongo.db.inventory.find({"user_id": ObjectId(current_user.get_id())}))
+    receipts = list(mongo.db.receipts.find({"user_id": ObjectId(current_user.get_id())}).sort("upload_date", -1))
     return render_template('dashboard.html', inventory=inventory, receipts=receipts)
 
 @app.route('/upload_receipt', methods=['POST'])
@@ -610,21 +620,16 @@ For each recipe, include:
 
 Available ingredients summary: {', '.join(ingredients_summary)}"""
 
-        # Verify OpenAI API key
-        if not os.getenv('OPENAI_API_KEY'):
-            app.logger.error("OpenAI API key is not set")
-            raise ValueError("OpenAI API key is not set")
-
         # Call OpenAI API
         try:
             completion = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.8,
-                max_tokens=4000  # Increased token limit to accommodate more recipes
+                max_tokens=4000
             )
             app.logger.info("Successfully received OpenAI API response")
             
@@ -893,7 +898,7 @@ Please provide recipe suggestions based on the request and available ingredients
 
         # Call OpenAI API
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -954,12 +959,12 @@ Please provide a new variation of the recipe '{recipe_name}'. Include:
 5. Clear cooking instructions"""
 
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are a helpful cooking assistant."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.8,  # Slightly higher temperature for more variation
+            temperature=0.8,
             max_tokens=1000
         )
 
