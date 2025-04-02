@@ -821,7 +821,7 @@ async function loadSuggestedRecipes() {
                                 <button class="btn-dislike" onclick="dislikeRecipe(${index})">
                                     <i class="fas fa-thumbs-down"></i> Dislike
                                 </button>
-                                <button class="btn-new" onclick="refreshRecipe(${index})">
+                                <button class="btn-new" onclick="newRecipe(${index})">
                                     <i class="fas fa-sync-alt"></i> New
                                 </button>
                             </div>
@@ -891,26 +891,87 @@ async function likeRecipe(index) {
 
 async function dislikeRecipe(index) {
     // TODO: Store preference and use for future suggestions
-    const card = event.target.closest('.recipe-card');
-    card.style.opacity = '0.5';
+    const button = event.target.closest('.btn-dislike');
+    button.innerHTML = '<i class="fas fa-times"></i> Disliked!';
+    button.disabled = true;
 }
 
-async function refreshRecipe(index) {
-    const card = event.target.closest('.col-lg-4');
-    card.innerHTML = `
-        <div class="card h-100 recipe-card">
-            <div class="card-body text-center">
-                <div class="loading-dots my-4">
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                </div>
-                <p class="text-muted">Finding a new recipe...</p>
+async function newRecipe(index) {
+    const button = event.target.closest('.btn-new');
+    const recipeCard = button.closest('.recipe-card');
+    
+    // Show loading state for this specific card
+    recipeCard.innerHTML = `
+        <div class="recipe-loading">
+            <div class="loading-dots">
+                <span>.</span>
+                <span>.</span>
+                <span>.</span>
             </div>
+            <p>Finding a new recipe...</p>
         </div>
     `;
-    // TODO: Call API to get a new recipe suggestion
-    await loadSuggestedRecipes();
+    
+    try {
+        const response = await fetch('/api/suggested_recipes');
+        const data = await response.json();
+        
+        if (data.recipes && data.recipes.length > 0) {
+            // Get a random recipe from the suggestions
+            const randomRecipe = data.recipes[Math.floor(Math.random() * data.recipes.length)];
+            
+            // Update just this card with the new recipe
+            recipeCard.innerHTML = `
+                <div class="card-body">
+                    <h5 class="card-title">${randomRecipe.name}</h5>
+                    <p class="card-text">${randomRecipe.description}</p>
+                    <p class="card-text">
+                        <small class="text-muted">
+                            <i class="fas fa-clock"></i> ${randomRecipe.cooking_time}
+                        </small>
+                    </p>
+                    <div class="mt-3">
+                        <strong>From your inventory:</strong>
+                        <ul class="mb-2">
+                            ${randomRecipe.ingredients.from_inventory.map(item => `
+                                <li>${item}</li>
+                            `).join('')}
+                        </ul>
+                        <strong>Additional ingredients needed:</strong>
+                        <ul class="mb-2">
+                            ${randomRecipe.ingredients.additional.map(item => `
+                                <li>${item}</li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                    <div class="recipe-actions mt-3">
+                        <button class="btn btn-like" onclick="likeRecipe(${index})">
+                            <i class="fas fa-thumbs-up"></i> Like
+                        </button>
+                        <button class="btn btn-dislike" onclick="dislikeRecipe(${index})">
+                            <i class="fas fa-thumbs-down"></i> Dislike
+                        </button>
+                        <button class="btn btn-new" onclick="newRecipe(${index})">
+                            <i class="fas fa-sync-alt"></i> New
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            recipeCard.innerHTML = `
+                <div class="card-body">
+                    <p class="text-muted text-center">No recipes available</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        recipeCard.innerHTML = `
+            <div class="card-body">
+                <p class="text-danger text-center">Error loading recipe</p>
+            </div>
+        `;
+    }
 }
 
 // Refresh recipes
