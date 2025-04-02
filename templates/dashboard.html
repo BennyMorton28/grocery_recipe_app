@@ -45,18 +45,26 @@
                     <div class="card-body">
                         <div class="upload-section mb-4">
                             <h2>Upload Receipt</h2>
-                            <form id="receiptForm" class="d-flex gap-2 align-items-start">
-                                <div class="flex-grow-1">
+                            <form id="receiptForm" class="d-flex flex-column gap-2">
+                                <div class="d-flex gap-2">
                                     <input type="file" 
-                                           class="form-control" 
-                                           id="receiptFile" 
+                                           class="form-control d-none" 
+                                           id="chooseFile" 
+                                           name="receipt" 
+                                           accept="image/*">
+                                    <input type="file" 
+                                           class="form-control d-none" 
+                                           id="takePhoto" 
                                            name="receipt" 
                                            accept="image/*"
                                            capture="environment">
+                                    <button type="button" class="btn btn-primary flex-grow-1" onclick="document.getElementById('chooseFile').click()">
+                                        <i class="fas fa-folder-open me-2"></i> Choose File
+                                    </button>
+                                    <button type="button" class="btn btn-primary flex-grow-1" onclick="document.getElementById('takePhoto').click()">
+                                        <i class="fas fa-camera me-2"></i> Take Photo
+                                    </button>
                                 </div>
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="fas fa-upload"></i> Upload
-                                </button>
                             </form>
                         </div>
                     </div>
@@ -1157,13 +1165,17 @@ function hideReceiptLoading() {
     document.getElementById('receiptLoadingState').style.display = 'none';
 }
 
-// Update the handleFileUpload function
+// Update the file input handlers
+document.getElementById('chooseFile').addEventListener('change', handleFileUpload);
+document.getElementById('takePhoto').addEventListener('change', handleFileUpload);
+
 function handleFileUpload(event) {
+    event.preventDefault();
     const file = event.target.files[0];
     if (!file) return;
 
-    showReceiptLoading();
     showDebug(`Starting receipt upload: ${file.name}`);
+    showReceiptLoading();
 
     const formData = new FormData();
     formData.append('receipt', file);
@@ -1178,60 +1190,18 @@ function handleFileUpload(event) {
     })
     .then(data => {
         showDebug(`Response data: ${JSON.stringify(data, null, 2)}`);
-        hideReceiptLoading();
         if (data.success) {
             showReceiptConfirmation(data.items);
         } else {
+            hideReceiptLoading();
             showError(data.error || 'Failed to process receipt');
         }
     })
     .catch(error => {
-        showDebug(`Error: ${error.message}`);
         hideReceiptLoading();
+        showDebug(`Error: ${error.message}`);
         showError('Error uploading receipt: ' + error.message);
     });
-}
-
-// Update the takePhoto function
-function takePhoto() {
-    const video = document.getElementById('camera-preview');
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    
-    // Draw video frame to canvas
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    
-    // Convert to blob
-    canvas.toBlob(blob => {
-        // Create form data
-        const formData = new FormData();
-        formData.append('receipt', blob, 'receipt.jpg');
-        
-        // Close camera
-        closeCamera();
-        
-        showReceiptLoading();
-        
-        // Upload the image
-        fetch('/api/upload_receipt', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            hideReceiptLoading();
-            if (data.success) {
-                showReceiptConfirmation(data.items);
-            } else {
-                showError(data.error || 'Failed to process receipt');
-            }
-        })
-        .catch(error => {
-            hideReceiptLoading();
-            showError('Error uploading receipt: ' + error.message);
-        });
-    }, 'image/jpeg');
 }
 
 function showReceiptConfirmation(items) {
