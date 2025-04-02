@@ -35,16 +35,36 @@
                 </div>
             </div>
 
-            <!-- Left Column: Upload Receipt and Inventory -->
-            <div class="col-md-6">
-                <!-- Upload Receipt Section -->
-                <div class="card shadow-sm mb-4">
+            <!-- Current Inventory Section - Moved up for better visibility -->
+            <div class="col-12 col-lg-6 order-1 order-lg-2">
+                <div class="card shadow-sm inventory-card">
+                    <div class="card-header sticky-top bg-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Current Inventory</h5>
+                        <div class="btn-group">
+                            <button class="btn btn-success btn-sm" onclick="showAddItemModal()">
+                                <i class="fas fa-plus"></i> Add
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="clearInventory()">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="inventory-list" class="table-responsive">
+                            <!-- Inventory items will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upload Receipt Section -->
+            <div class="col-12 col-lg-6 order-2 order-lg-1">
+                <div class="card shadow-sm">
                     <div class="card-header">
                         <h5 class="mb-0">Upload Receipt</h5>
                     </div>
                     <div class="card-body">
                         <div class="upload-section mb-4">
-                            <h2>Upload Receipt</h2>
                             <form id="receiptForm" class="d-flex flex-column gap-2">
                                 <div class="d-flex gap-2">
                                     <input type="file" 
@@ -70,58 +90,13 @@
                     </div>
                 </div>
 
-                <!-- Add this right after the receipt upload section -->
-                <div id="receiptLoadingState" class="loading-state" style="display: none;">
-                    <div class="loading-content">
-                        <div class="loading-dots">
-                            <div class="dot"></div>
-                            <div class="dot"></div>
-                            <div class="dot"></div>
-                        </div>
-                        <div class="loading-message">Processing receipt...</div>
-                    </div>
-                </div>
-
-                <!-- Add this right after the receipt upload section -->
-                <div id="error-message" class="alert alert-danger" style="display: none;"></div>
-
-                <!-- Add this right after the receipt upload section -->
-                <div id="debugPanel" class="debug-panel" style="display: none;">
-                    <div class="debug-content">
-                        <h4>Debug Information</h4>
-                        <pre id="debugOutput"></pre>
-                    </div>
-                </div>
-
-                <!-- Current Inventory Section -->
-                <div class="card shadow-sm">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Current Inventory</h5>
-                        <div class="btn-group">
-                            <button class="btn btn-success" onclick="showAddItemModal()">
-                                <i class="fas fa-plus"></i> Add Item
-                            </button>
-                            <button class="btn btn-danger" onclick="clearInventory()">
-                                <i class="fas fa-trash"></i> Clear All
-                            </button>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div id="inventory-list" class="table-responsive">
-                            <!-- Inventory items will be loaded here -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right Column: Recipe Chat -->
-            <div class="col-md-6">
-                <div class="card shadow-sm">
+                <!-- Recipe Chat -->
+                <div class="card shadow-sm mt-4">
                     <div class="card-header">
                         <h5 class="mb-0">Recipe Chat</h5>
                     </div>
                     <div class="card-body d-flex flex-column">
-                        <div id="chat-messages" class="flex-grow-1 mb-3" style="height: 500px; overflow-y: auto;">
+                        <div id="chat-messages" class="flex-grow-1 mb-3" style="height: 300px; overflow-y: auto;">
                             <div class="text-center text-muted p-4">
                                 <p class="mb-2">Ask me anything about recipes! For example:</p>
                                 <p class="mb-2">"What can I make in 15 minutes?"</p>
@@ -196,6 +171,7 @@
     box-shadow: 0 2px 4px rgba(0,0,0,0.04);
     height: var(--nav-height);
     padding: 0 24px;
+    z-index: 1030;
 }
 
 .navbar-brand {
@@ -667,6 +643,92 @@
 .fa-pencil-alt {
     font-size: 0.9em;
 }
+
+/* Inventory Card Styles */
+.inventory-card {
+    height: calc(100vh - var(--nav-height) - 2rem);
+    display: flex;
+    flex-direction: column;
+}
+
+.inventory-card .card-body {
+    flex: 1;
+    overflow: hidden;
+}
+
+.inventory-card .card-header {
+    z-index: 1020;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+}
+
+#inventory-list {
+    height: 100%;
+    overflow-y: auto;
+}
+
+#inventory-list .table {
+    margin-bottom: 0;
+}
+
+#inventory-list .table th {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 1;
+    font-size: 0.9rem;
+}
+
+#inventory-list .table td {
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    vertical-align: middle;
+}
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+    .container-fluid {
+        padding: 12px;
+    }
+    
+    .navbar {
+        padding: 0 12px;
+    }
+    
+    .inventory-card {
+        height: auto;
+        min-height: 300px;
+        max-height: 50vh;
+    }
+    
+    .card-header .btn-group .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    .table-responsive {
+        margin: 0;
+        padding: 0;
+    }
+    
+    #inventory-list .table th,
+    #inventory-list .table td {
+        white-space: nowrap;
+        padding: 0.5rem;
+    }
+    
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    .row {
+        margin: -0.5rem;
+    }
+    
+    .col-12 {
+        padding: 0.5rem;
+    }
+}
 </style>
 {% endblock %}
 
@@ -987,38 +1049,47 @@ async function loadInventory() {
         const inventoryList = document.getElementById('inventory-list');
         if (data.items && data.items.length > 0) {
             inventoryList.innerHTML = `
-                <div class="table-responsive">
-                    <table class="table">
-                        <thead>
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th class="text-center">Qty</th>
+                            <th class="text-center">Unit</th>
+                            <th class="text-end">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.items.map(item => `
                             <tr>
-                                <th>Item</th>
-                                <th>Quantity</th>
-                                <th>Unit</th>
-                                <th>Action</th>
+                                <td class="text-nowrap">${item.name}</td>
+                                <td class="text-center">${item.quantity}</td>
+                                <td class="text-center">${item.unit}</td>
+                                <td class="text-end">
+                                    <button onclick="deleteItem('${item._id}')" class="btn btn-danger btn-sm">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            ${data.items.map(item => `
-                                <tr>
-                                    <td>${item.name}</td>
-                                    <td>${item.quantity}</td>
-                                    <td>${item.unit}</td>
-                                    <td>
-                                        <button onclick="deleteItem('${item._id}')" class="btn btn-danger btn-sm">
-                                            Delete
-                                        </button>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
+                        `).join('')}
+                    </tbody>
+                </table>
             `;
         } else {
-            inventoryList.innerHTML = '<p class="text-muted text-center">No items in inventory</p>';
+            inventoryList.innerHTML = `
+                <div class="text-center text-muted p-4">
+                    <i class="fas fa-box-open fa-3x mb-3"></i>
+                    <p class="mb-0">No items in inventory</p>
+                </div>
+            `;
         }
     } catch (error) {
         console.error('Error loading inventory:', error);
+        inventoryList.innerHTML = `
+            <div class="text-center text-danger p-4">
+                <i class="fas fa-exclamation-circle fa-3x mb-3"></i>
+                <p class="mb-0">Error loading inventory</p>
+            </div>
+        `;
     }
 }
 
