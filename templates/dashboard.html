@@ -118,12 +118,12 @@
 </div>
 
 <!-- Add Item Modal -->
-<div class="modal fade" id="addItemModal" tabindex="-1">
-    <div class="modal-dialog">
+<div class="modal fade" id="addItemModal" tabindex="-1" aria-labelledby="addItemModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Add Item to Inventory</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="addItemModalLabel">Add Item to Inventory</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <form id="addItemForm">
@@ -840,14 +840,17 @@ async function loadSuggestedRecipes() {
 function showAddItemModal() {
     const modal = new bootstrap.Modal(document.getElementById('addItemModal'));
     modal.show();
+    
+    // Focus the first input field
+    document.getElementById('itemName').focus();
 }
 
 // Add New Item
 async function addItemToInventory() {
     const form = document.getElementById('addItemForm');
-    const name = document.getElementById('itemName').value;
+    const name = document.getElementById('itemName').value.trim();
     const quantity = parseFloat(document.getElementById('itemQuantity').value);
-    const unit = document.getElementById('itemUnit').value;
+    const unit = document.getElementById('itemUnit').value.trim();
     const price = parseFloat(document.getElementById('itemPrice').value);
     
     if (!name || isNaN(quantity) || !unit || isNaN(price)) {
@@ -857,28 +860,31 @@ async function addItemToInventory() {
     
     const item = { name, quantity, unit, price };
     
-    fetch('/api/add_item', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ items: [item] })
-    })
-    .then(response => response.json())
-    .then(data => {
+    try {
+        const response = await fetch('/api/add_item', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ items: [item] })
+        });
+        
+        const data = await response.json();
+        
         if (data.success) {
             showSuccess(data.message);
             const modal = bootstrap.Modal.getInstance(document.getElementById('addItemModal'));
             modal.hide();
-            // Refresh the page to show updated inventory
-            setTimeout(() => window.location.reload(), 1000);
+            // Clear the form
+            form.reset();
+            // Refresh the inventory
+            loadInventory();
         } else {
             showError(data.error || 'Failed to add item');
         }
-    })
-    .catch(error => {
+    } catch (error) {
         showError('Error adding item: ' + error.message);
-    });
+    }
 }
 
 // Recipe interaction functions
