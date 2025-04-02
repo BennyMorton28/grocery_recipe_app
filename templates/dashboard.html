@@ -43,18 +43,21 @@
                         <h5 class="mb-0">Upload Receipt</h5>
                     </div>
                     <div class="card-body">
-                        <div class="upload-section p-4 text-center">
-                            <i class="fas fa-receipt mb-3 text-primary" style="font-size: 2.5rem;"></i>
-                            <p class="mb-4">Add your receipt using one of these options:</p>
-                            <div class="d-grid gap-3">
-                                <button class="btn btn-primary" onclick="captureReceipt()">
-                                    <i class="fas fa-camera me-2"></i>Take Picture
+                        <div class="upload-section mb-4">
+                            <h2>Upload Receipt</h2>
+                            <form id="receiptForm" class="d-flex gap-2 align-items-start">
+                                <div class="flex-grow-1">
+                                    <input type="file" 
+                                           class="form-control" 
+                                           id="receiptFile" 
+                                           name="receipt" 
+                                           accept="image/*"
+                                           capture="environment">
+                                </div>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-upload"></i> Upload
                                 </button>
-                                <button class="btn btn-outline-primary" onclick="document.getElementById('fileInput').click()">
-                                    <i class="fas fa-folder-open me-2"></i>Choose File
-                                </button>
-                                <input type="file" id="fileInput" class="d-none" accept="image/*" capture="environment" onchange="handleFileUpload(event)">
-                            </div>
+                            </form>
                         </div>
                     </div>
                 </div>
@@ -87,11 +90,11 @@
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0">Current Inventory</h5>
                         <div class="btn-group">
-                            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addItemModal">
+                            <button class="btn btn-success" onclick="showAddItemModal()">
                                 <i class="fas fa-plus"></i> Add Item
                             </button>
-                            <button onclick="deleteAllInventory()" class="btn btn-danger ms-2">
-                                Clear All
+                            <button class="btn btn-danger" onclick="clearInventory()">
+                                <i class="fas fa-trash"></i> Clear All
                             </button>
                         </div>
                     </div>
@@ -136,7 +139,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Add New Item</h5>
+                <h5 class="modal-title">Add Item to Inventory</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -145,47 +148,23 @@
                         <label for="itemName" class="form-label">Item Name</label>
                         <input type="text" class="form-control" id="itemName" required>
                     </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="itemQuantity" class="form-label">Quantity</label>
-                            <input type="number" class="form-control" id="itemQuantity" min="0" step="0.1" required>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="itemUnit" class="form-label">Unit</label>
-                            <select class="form-select" id="itemUnit" required>
-                                <optgroup label="Volume">
-                                    <option value="ml">Milliliter (ml)</option>
-                                    <option value="l">Liter (l)</option>
-                                    <option value="cup">Cup</option>
-                                    <option value="tbsp">Tablespoon</option>
-                                    <option value="tsp">Teaspoon</option>
-                                    <option value="oz">Fluid Ounce (oz)</option>
-                                </optgroup>
-                                <optgroup label="Weight">
-                                    <option value="g">Gram (g)</option>
-                                    <option value="kg">Kilogram (kg)</option>
-                                    <option value="lb">Pound (lb)</option>
-                                    <option value="oz">Ounce (oz)</option>
-                                </optgroup>
-                                <optgroup label="Count">
-                                    <option value="pcs">Pieces</option>
-                                    <option value="dozen">Dozen</option>
-                                </optgroup>
-                                <optgroup label="Other">
-                                    <option value="bunch">Bunch</option>
-                                    <option value="slice">Slice</option>
-                                    <option value="stick">Stick</option>
-                                    <option value="jar">Jar</option>
-                                    <option value="container">Container</option>
-                                </optgroup>
-                            </select>
-                        </div>
+                    <div class="mb-3">
+                        <label for="itemQuantity" class="form-label">Quantity</label>
+                        <input type="number" class="form-control" id="itemQuantity" step="0.01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="itemUnit" class="form-label">Unit</label>
+                        <input type="text" class="form-control" id="itemUnit" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="itemPrice" class="form-label">Price</label>
+                        <input type="number" class="form-control" id="itemPrice" step="0.01" required>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="addItem()">Add Item</button>
+                <button type="button" class="btn btn-primary" onclick="addItemToInventory()">Add Item</button>
             </div>
         </div>
     </div>
@@ -794,81 +773,42 @@ function showAddItemModal() {
 }
 
 // Add New Item
-async function addItem() {
+async function addItemToInventory() {
+    const form = document.getElementById('addItemForm');
     const name = document.getElementById('itemName').value;
     const quantity = parseFloat(document.getElementById('itemQuantity').value);
     const unit = document.getElementById('itemUnit').value;
-
-    if (!name || !quantity || !unit) {
-        alert('Please fill in all required fields');
+    const price = parseFloat(document.getElementById('itemPrice').value);
+    
+    if (!name || isNaN(quantity) || !unit || isNaN(price)) {
+        showError('Please fill in all fields correctly');
         return;
     }
-
-    // Disable the submit button and show loading state
-    const submitButton = document.querySelector('#addItemModal .btn-primary');
-    const originalText = submitButton.innerHTML;
-    submitButton.disabled = true;
-    submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Adding...';
-
-    try {
-        const response = await fetch('/api/inventory', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                name: name,
-                quantity: quantity,
-                unit: unit
-            })
-        });
-
-        if (response.ok) {
-            // Close modal
+    
+    const item = { name, quantity, unit, price };
+    
+    fetch('/api/add_item', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ items: [item] })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccess(data.message);
             const modal = bootstrap.Modal.getInstance(document.getElementById('addItemModal'));
             modal.hide();
-            
-            // Reset form
-            document.getElementById('addItemForm').reset();
-            
-            // Refresh inventory immediately
-            await loadInventory();
-            
-            // Show success toast
-            const toastContainer = document.createElement('div');
-            toastContainer.style.position = 'fixed';
-            toastContainer.style.top = '1rem';
-            toastContainer.style.right = '1rem';
-            toastContainer.style.zIndex = '1050';
-            toastContainer.innerHTML = `
-                <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
-                    <div class="toast-header bg-success text-white">
-                        <strong class="me-auto">Success</strong>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
-                    </div>
-                    <div class="toast-body">
-                        ${name} has been added to your inventory.
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(toastContainer);
-            
-            // Remove toast after 3 seconds
-            setTimeout(() => {
-                toastContainer.remove();
-            }, 3000);
+            // Refresh the page to show updated inventory
+            setTimeout(() => window.location.reload(), 1000);
         } else {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to add item');
+            showError(data.error || 'Failed to add item');
         }
-    } catch (error) {
-        console.error('Error:', error);
-        alert(error.message || 'Failed to add item');
-    } finally {
-        // Reset button state
-        submitButton.disabled = false;
-        submitButton.innerHTML = originalText;
-    }
+    })
+    .catch(error => {
+        showError('Error adding item: ' + error.message);
+    });
 }
 
 // Recipe interaction functions
