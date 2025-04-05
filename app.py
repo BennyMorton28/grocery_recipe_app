@@ -143,11 +143,21 @@ KITCHEN_TOOLS = {
     }
 }
 
+# Load environment variables from absolute path
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+load_dotenv(env_path)
+
+# Debug prints
+print("Environment variables:")
+print("MONGO_URI:", os.getenv('MONGO_URI'))
+print("FLASK_APP:", os.getenv('FLASK_APP'))
+print("SECRET_KEY:", os.getenv('SECRET_KEY'))
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-app.config["MONGO_URI"] = os.getenv("MONGODB_URI")
+app.config["MONGO_URI"] = os.getenv("MONGO_URI")
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -156,16 +166,6 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'heic', 'heif'}
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
-
-# Load environment variables from absolute path
-env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
-load_dotenv(env_path)
-
-# Debug prints
-print("Environment variables:")
-print("MONGODB_URI:", os.getenv('MONGODB_URI'))
-print("FLASK_APP:", os.getenv('FLASK_APP'))
-print("SECRET_KEY:", os.getenv('SECRET_KEY'))
 
 # Initialize OpenAI client
 client = OpenAI()  # This will automatically use OPENAI_API_KEY from environment
@@ -319,40 +319,42 @@ def process_receipt(receipt_path):
         app.logger.info("Encoding image to base64...")
         with open(receipt_path, "rb") as image_file:
             base64_image = base64.b64encode(image_file.read()).decode("utf-8")
-        app.logger.info("Image encoded successfully")
+        app.logger.info(f"Image encoded successfully. Base64 length: {len(base64_image)}")
         
         # Step 3: Prepare the API request
         app.logger.info("Preparing OpenAI API request...")
         request_data = {
             "model": "gpt-4o",
-            "input": [{
+            "messages": [{
                 "role": "user",
                 "content": [
                     {
-                        "type": "input_text",
+                        "type": "text",
                         "text": "Please analyze this receipt and extract all grocery items. For each item, provide: name, quantity, unit, and price. Format the response as a JSON array with these fields. Example: [{\"name\": \"Milk\", \"quantity\": 1, \"unit\": \"gallon\", \"price\": 3.99}]. Return ONLY the JSON array, no other text or formatting."
                     },
                     {
-                        "type": "input_image",
-                        "image_url": f"data:image/jpeg;base64,{base64_image}",
-                        "detail": "high"
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
                     }
                 ]
-            }]
+            }],
+            "max_tokens": 1000
         }
         app.logger.info("API request prepared")
         
         # Step 4: Make the API call
         app.logger.info("Making OpenAI API call...")
-        response = client.responses.create(**request_data)
+        response = client.chat.completions.create(**request_data)
         app.logger.info("API call completed successfully")
         
         # Step 5: Log the raw response
-        app.logger.info(f"Raw OpenAI API Response: {response.output_text}")
+        app.logger.info(f"Raw OpenAI API Response: {response.choices[0].message.content}")
         
         # Step 6: Clean up the response text
         app.logger.info("Cleaning response text...")
-        clean_response = response.output_text.strip()
+        clean_response = response.choices[0].message.content.strip()
         
         # Remove markdown formatting if present
         if clean_response.startswith("```"):
@@ -381,10 +383,10 @@ def process_receipt(receipt_path):
                     app.logger.info(f"Processing item: {item}")
                     # Clean and validate the item
                     cleaned_item = {
-                        'name': clean_item_name(item.get('name', '')),
-                        'quantity': clean_quantity(item.get('quantity', 1)),
-                        'unit': clean_unit(item.get('unit', '')),
-                        'price': clean_price(item.get('price', 0))
+                        'name': item.get('name', '').strip(),
+                        'quantity': float(item.get('quantity', 1)),
+                        'unit': item.get('unit', '').strip().lower(),
+                        'price': float(item.get('price', 0))
                     }
                     cleaned_items.append(cleaned_item)
                     app.logger.info(f"Cleaned item: {cleaned_item}")
@@ -396,7 +398,7 @@ def process_receipt(receipt_path):
             return cleaned_items
             
         except json.JSONDecodeError as e:
-            app.logger.error(f"Failed to parse recipe response: {response.output_text}")
+            app.logger.error(f"Failed to parse receipt response: {clean_response}")
             app.logger.error(f"JSON decode error: {str(e)}")
             raise ValueError("Failed to parse receipt data")
             
@@ -431,11 +433,11 @@ def register():
             flash('Username or email already exists', 'error')
             return redirect(url_for('register'))
         
-        # Create new user
+        # Create new user with pbkdf2:sha256 method
         user_data = {
             "username": username,
             "email": email,
-            "password_hash": generate_password_hash(password),
+            "password_hash": generate_password_hash(password, method='pbkdf2:sha256'),
             "cooking_methods": cooking_methods,
             "kitchen_tools": kitchen_tools,
             "preferences": {},
@@ -495,12 +497,16 @@ def dashboard():
 def upload_receipt():
     """Handle receipt upload and processing."""
     app.logger.info("Starting receipt upload process")
+    app.logger.info(f"Request files: {request.files}")
+    app.logger.info(f"Request form: {request.form}")
     
     if 'receipt' not in request.files:
         app.logger.error("No receipt file in request")
         return jsonify({'error': 'No file uploaded'}), 400
     
     file = request.files['receipt']
+    app.logger.info(f"Received file: {file.filename}")
+    
     if file.filename == '':
         app.logger.error("Empty filename")
         return jsonify({'error': 'No file selected'}), 400
@@ -518,6 +524,7 @@ def upload_receipt():
         
         app.logger.info(f"Saving file to {filepath}")
         file.save(filepath)
+        app.logger.info("File saved successfully")
         
         app.logger.info("Processing receipt with OpenAI Vision API")
         try:
@@ -529,6 +536,7 @@ def upload_receipt():
                 return jsonify({'error': 'No items found in receipt'}), 400
             
             app.logger.info(f"Successfully processed {len(items)} items")
+            app.logger.info(f"Processed items: {items}")
             
             # Return the items for user confirmation
             return jsonify({
@@ -539,6 +547,7 @@ def upload_receipt():
             
         except Exception as process_error:
             app.logger.error(f"Error processing receipt: {str(process_error)}")
+            app.logger.exception("Full traceback:")
             return jsonify({
                 'error': 'Failed to process receipt',
                 'details': str(process_error)
@@ -546,6 +555,7 @@ def upload_receipt():
             
     except Exception as save_error:
         app.logger.error(f"Error saving file: {str(save_error)}")
+        app.logger.exception("Full traceback:")
         return jsonify({
             'error': 'Failed to save file',
             'details': str(save_error)
@@ -559,6 +569,7 @@ def upload_receipt():
                 app.logger.info(f"Cleaned up file: {filepath}")
         except Exception as cleanup_error:
             app.logger.error(f"Error during cleanup: {str(cleanup_error)}")
+            app.logger.exception("Full traceback:")
 
 @app.route('/api/confirm_receipt_items', methods=['POST'])
 @login_required
@@ -608,21 +619,6 @@ def confirm_receipt_items():
             'details': str(e)
         }), 500
 
-@app.route('/add_item', methods=['POST'])
-@login_required
-def add_item():
-    data = request.json
-    new_item = {
-        'name': data['name'],
-        'quantity': data['quantity'],
-        'unit': data['unit'],
-        'expiry_date': datetime.strptime(data['expiry_date'], '%Y-%m-%d') if data.get('expiry_date') else None,
-        'user_id': ObjectId(current_user.id),
-        'date_added': datetime.utcnow()
-    }
-    mongo.db.inventory.insert_one(new_item)
-    return jsonify({'message': 'Item added successfully'})
-
 @app.route('/delete_item/<item_id>', methods=['DELETE'])
 @login_required
 def delete_item(item_id):
@@ -633,6 +629,67 @@ def delete_item(item_id):
     if result.deleted_count == 0:
         return jsonify({'error': 'Item not found'}), 404
     return jsonify({'message': 'Item deleted successfully'})
+
+@app.route('/api/add_item', methods=['POST'])
+@login_required
+def add_item():
+    """Handle adding a single item to inventory"""
+    app.logger.info("Processing add item request")
+    
+    try:
+        data = request.json
+        app.logger.info(f"Received item data: {data}")
+        
+        if not data:
+            app.logger.error("No data provided")
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Handle both direct item data and items array format
+        if 'items' in data and isinstance(data['items'], list):
+            # If data is in the format {"items": [{"name": "...", ...}]}
+            if len(data['items']) > 0:
+                item_data = data['items'][0]  # Take the first item
+            else:
+                app.logger.error("Empty items array provided")
+                return jsonify({'error': 'Empty items array provided'}), 400
+        else:
+            # If data is directly the item {"name": "...", ...}
+            item_data = data
+        
+        # Validate required fields
+        required_fields = ['name', 'quantity', 'unit', 'price']
+        for field in required_fields:
+            if field not in item_data:
+                app.logger.error(f"Missing required field: {field}")
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        # Create inventory item
+        inventory_item = {
+            'user_id': ObjectId(current_user.id),
+            'name': item_data['name'],
+            'quantity': float(item_data['quantity']),
+            'unit': item_data['unit'],
+            'price': float(item_data['price']),
+            'date_added': datetime.utcnow()
+        }
+        
+        app.logger.info(f"Adding item to inventory: {inventory_item}")
+        result = mongo.db.inventory.insert_one(inventory_item)
+        app.logger.info(f"Successfully added item with ID: {result.inserted_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Item added successfully',
+            'item_id': str(result.inserted_id)
+        }), 200
+        
+    except Exception as e:
+        app.logger.error(f"Error adding item: {str(e)}")
+        app.logger.exception("Full traceback:")
+        return jsonify({
+            'error': 'Failed to add item',
+            'details': str(e)
+        }), 500
 
 @app.route('/get_recipes')
 @login_required
@@ -735,7 +792,7 @@ Available ingredients summary: {', '.join(ingredients_summary)}"""
         # Call OpenAI API
         try:
             completion = client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -1036,7 +1093,7 @@ Please provide recipe suggestions based on the request and available ingredients
 
         # Call OpenAI API
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -1097,7 +1154,7 @@ Please provide a new variation of the recipe '{recipe_name}'. Include:
 5. Clear cooking instructions"""
 
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a helpful cooking assistant."},
                 {"role": "user", "content": prompt}

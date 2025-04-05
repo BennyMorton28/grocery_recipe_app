@@ -87,6 +87,13 @@
                                 </div>
                             </form>
                         </div>
+                        <div id="loadingState" class="text-center d-none">
+                            <div class="spinner-border text-primary mb-3" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p id="loadingMessage" class="mb-0">Processing receipt...</p>
+                        </div>
+                        <div id="error-message" class="alert alert-danger d-none" role="alert"></div>
                     </div>
                 </div>
 
@@ -198,17 +205,25 @@
 /* Dashboard Container */
 .dashboard-container {
     padding-top: var(--nav-height);
-    min-height: 100vh;
+    min-height: calc(100vh - var(--nav-height));
+    max-height: calc(100vh - var(--nav-height));
+    overflow-y: hidden;
     background: #f8f9fa;
 }
 
-/* Recipe Card Styles */
 .container-fluid {
-    max-width: 1600px;
-    margin: 0 auto;
+    height: 100%;
+    max-height: calc(100vh - var(--nav-height));
+    overflow-y: auto;
     padding: 24px;
 }
 
+.row {
+    height: 100%;
+    margin: 0;
+}
+
+/* Recipe Card Styles */
 .card {
     border: none;
     border-radius: 16px;
@@ -308,7 +323,7 @@
 }
 
 #inventory-list {
-    max-height: 400px;
+    height: 100%;
     overflow-y: auto;
 }
 
@@ -365,7 +380,7 @@
 
 @media (max-width: 768px) {
     .container-fluid {
-        padding: 16px;
+        padding: 12px;
     }
     
     .navbar {
@@ -646,12 +661,13 @@
 
 /* Inventory Card Styles */
 .inventory-card {
-    height: calc(100vh - var(--nav-height) - 2rem);
+    height: calc(100vh - var(--nav-height) - 48px);
     display: flex;
     flex-direction: column;
 }
 
 .inventory-card .card-body {
+    padding: 0;
     flex: 1;
     overflow: hidden;
 }
@@ -695,9 +711,8 @@
     }
     
     .inventory-card {
-        height: auto;
-        min-height: 300px;
-        max-height: 50vh;
+        height: 400px;
+        margin-bottom: 1rem;
     }
     
     .card-header .btn-group .btn {
@@ -728,867 +743,247 @@
     .col-12 {
         padding: 0.5rem;
     }
+
+    .dashboard-container {
+        padding-top: calc(var(--nav-height) + 1rem);
+    }
+
+    #extracted-items {
+        max-height: none;
+    }
+
+    #extracted-items .table-responsive {
+        max-height: 300px;
+    }
+}
+
+/* Fix extracted items display */
+#extracted-items {
+    margin-top: 1rem;
+    max-height: calc(100vh - var(--nav-height) - 400px);
+    overflow-y: auto;
+}
+
+#extracted-items .card {
+    margin-bottom: 1rem;
+}
+
+#extracted-items .table-responsive {
+    max-height: calc(100vh - var(--nav-height) - 500px);
+    overflow-y: auto;
+}
+
+/* Fix table headers */
+.table thead th {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 1;
 }
 </style>
 {% endblock %}
 
 {% block extra_js %}
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Font Awesome -->
+<script src="https://kit.fontawesome.com/a076d05399.js"></script>
+<!-- Custom JS -->
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
 <script>
-// Load recipes and inventory on page load
-document.addEventListener('DOMContentLoaded', function() {
-    loadInventory();
-    loadSuggestedRecipes();
-});
-
-// Recipe loading function
-async function loadSuggestedRecipes() {
-    // Show loading animation first
-    const container = document.getElementById('recipe-suggestions');
-    container.innerHTML = `
-        <div class="col-12">
-            <div class="recipe-loading text-center">
-                <div class="loading-animation">
-                    <div class="loading-dots">
-                        <span>•</span><span>•</span><span>•</span>
-                    </div>
-                    <div class="loading-message">Analyzing your ingredients...</div>
-                </div>
-            </div>
-        </div>
-    `;
-
-    // Start cycling loading messages
-    const messages = [
-        "Analyzing your ingredients...",
-        "Discovering delicious combinations...",
-        "Crafting perfect recipes...",
-        "Adding a pinch of AI magic...",
-        "Almost ready to serve..."
-    ];
-    let messageIndex = 0;
-    const messageInterval = setInterval(() => {
-        messageIndex = (messageIndex + 1) % messages.length;
-        const messageEl = container.querySelector('.loading-message');
-        if (messageEl) {
-            messageEl.style.opacity = 0;
-            setTimeout(() => {
-                messageEl.textContent = messages[messageIndex];
-                messageEl.style.opacity = 1;
-            }, 200);
+    // Debug logging function
+    function debugLog(message, data = null) {
+        console.log(`[Debug] ${message}`, data ? data : '');
+        // Also log to debug panel if it exists
+        const debugOutput = document.getElementById('debugOutput');
+        if (debugOutput) {
+            const timestamp = new Date().toISOString();
+            debugOutput.textContent += `[${timestamp}] ${message}\n`;
+            if (data) {
+                debugOutput.textContent += JSON.stringify(data, null, 2) + '\n';
+            }
+            debugOutput.scrollTop = debugOutput.scrollHeight;
         }
-    }, 2000);
-
-    try {
-        // Artificial delay to show the loading animation
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        const response = await fetch('/api/suggested_recipes');
-        const data = await response.json();
-        
-        // Clear the interval before updating content
-        clearInterval(messageInterval);
-        
-        if (data.recipes) {
-            container.innerHTML = data.recipes.map((recipe, index) => `
-                <div class="col-lg-4 col-md-6">
-                    <div class="card h-100 recipe-card">
-                        <div class="card-body">
-                            <h5 class="card-title">${recipe.name}</h5>
-                            <p class="card-text">${recipe.description}</p>
-                            <p class="card-text">
-                                <small class="text-muted">
-                                    <i class="fas fa-clock"></i> ${recipe.cooking_time}
-                                </small>
-                            </p>
-                            <div class="mt-3">
-                                <strong>From your inventory:</strong>
-                                <ul class="mb-2">
-                                    ${recipe.ingredients.from_inventory.map(item => `
-                                        <li>${item}</li>
-                                    `).join('')}
-                                </ul>
-                                <strong>Additional needed:</strong>
-                                <ul class="mb-0">
-                                    ${recipe.ingredients.additional_needed.map(item => `
-                                        <li>${item}</li>
-                                    `).join('')}
-                                </ul>
-                            </div>
-                            <div class="recipe-actions">
-                                <button class="btn-like" onclick="likeRecipe(${index})">
-                                    <i class="fas fa-thumbs-up"></i> Like
-                                </button>
-                                <button class="btn-dislike" onclick="dislikeRecipe(${index})">
-                                    <i class="fas fa-thumbs-down"></i> Dislike
-                                </button>
-                                <button class="btn-new" onclick="newRecipe(${index})">
-                                    <i class="fas fa-sync-alt"></i> New
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        }
-    } catch (error) {
-        clearInterval(messageInterval);
-        console.error('Error loading recipes:', error);
     }
-}
 
-// Show Add Item Modal
-function showAddItemModal() {
-    const modal = new bootstrap.Modal(document.getElementById('addItemModal'));
-    modal.show();
-    
-    // Focus the first input field
-    document.getElementById('itemName').focus();
-}
+    // Wait for DOM to be fully loaded
+    document.addEventListener('DOMContentLoaded', function() {
+        debugLog('DOM Content Loaded - Initializing event handlers');
 
-// Add New Item
-async function addItemToInventory() {
-    const form = document.getElementById('addItemForm');
-    const name = document.getElementById('itemName').value.trim();
-    const quantity = parseFloat(document.getElementById('itemQuantity').value);
-    const unit = document.getElementById('itemUnit').value.trim();
-    const price = parseFloat(document.getElementById('itemPrice').value);
-    
-    if (!name || isNaN(quantity) || !unit || isNaN(price)) {
-        showError('Please fill in all fields correctly');
-        return;
-    }
-    
-    const item = { name, quantity, unit, price };
-    
-    try {
-        const response = await fetch('/api/add_item', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ items: [item] })
+        // Update the file input handlers
+        const chooseFileInput = document.getElementById('chooseFile');
+        const takePhotoInput = document.getElementById('takePhoto');
+
+        debugLog('Setting up file input handlers', {
+            chooseFileExists: !!chooseFileInput,
+            takePhotoExists: !!takePhotoInput
         });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showSuccess(data.message);
-            const modal = bootstrap.Modal.getInstance(document.getElementById('addItemModal'));
-            modal.hide();
-            // Clear the form
-            form.reset();
-            // Refresh the inventory
+
+        if (chooseFileInput) {
+            chooseFileInput.addEventListener('change', function(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    debugLog('File selected via choose file', {
+                        name: file.name,
+                        type: file.type,
+                        size: file.size
+                    });
+                    uploadReceipt(file);
+                }
+            });
+        } else {
+            console.error('Choose file input not found!');
+        }
+
+        if (takePhotoInput) {
+            takePhotoInput.addEventListener('change', function(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    debugLog('File selected via take photo', {
+                        name: file.name,
+                        type: file.type,
+                        size: file.size
+                    });
+                    uploadReceipt(file);
+                }
+            });
+        } else {
+            console.error('Take photo input not found!');
+        }
+
+        // Add debug panel to page
+        const debugPanel = document.createElement('div');
+        debugPanel.id = 'debugPanel';
+        debugPanel.className = 'debug-panel d-none';
+        debugPanel.innerHTML = `
+            <div class="debug-content">
+                <pre id="debugOutput"></pre>
+            </div>
+        `;
+        document.body.appendChild(debugPanel);
+
+        // Add debug toggle button
+        const debugButton = document.createElement('button');
+        debugButton.className = 'btn btn-sm btn-info position-fixed';
+        debugButton.style.bottom = '10px';
+        debugButton.style.right = '10px';
+        debugButton.style.zIndex = '1100';
+        debugButton.innerHTML = 'Toggle Debug';
+        debugButton.onclick = function() {
+            const panel = document.getElementById('debugPanel');
+            if (panel) {
+                panel.classList.toggle('d-none');
+            }
+        };
+        document.body.appendChild(debugButton);
+
+        debugLog('Initializing inventory load');
+        // Load inventory on page load
+        if (typeof loadInventory === 'function') {
             loadInventory();
         } else {
-            showError(data.error || 'Failed to add item');
+            console.error('loadInventory function not found!');
+            debugLog('Error: loadInventory function not found');
         }
-    } catch (error) {
-        showError('Error adding item: ' + error.message);
-    }
-}
-
-// Recipe interaction functions
-async function likeRecipe(index) {
-    // TODO: Store preference and use for future suggestions
-    const button = event.target.closest('.btn-like');
-    button.innerHTML = '<i class="fas fa-check"></i> Liked!';
-    button.disabled = true;
-}
-
-async function dislikeRecipe(index) {
-    // TODO: Store preference and use for future suggestions
-    const button = event.target.closest('.btn-dislike');
-    button.innerHTML = '<i class="fas fa-times"></i> Disliked!';
-    button.disabled = true;
-}
-
-async function newRecipe(index) {
-    const button = event.target.closest('.btn-new');
-    const recipeCard = button.closest('.recipe-card');
-    
-    // Show loading state for this specific card
-    recipeCard.innerHTML = `
-        <div class="recipe-loading">
-            <div class="loading-dots">
-                <span>.</span>
-                <span>.</span>
-                <span>.</span>
-            </div>
-            <p>Finding a new recipe...</p>
-        </div>
-    `;
-    
-    try {
-        const response = await fetch('/api/suggested_recipes');
-        const data = await response.json();
-        
-        if (data.recipes && data.recipes.length > 0) {
-            // Get a random recipe from the suggestions
-            const randomRecipe = data.recipes[Math.floor(Math.random() * data.recipes.length)];
-            
-            // Update just this card with the new recipe
-            recipeCard.innerHTML = `
-                <div class="card-body">
-                    <h5 class="card-title">${randomRecipe.name}</h5>
-                    <p class="card-text">${randomRecipe.description}</p>
-                    <p class="card-text">
-                        <small class="text-muted">
-                            <i class="fas fa-clock"></i> ${randomRecipe.cooking_time}
-                        </small>
-                    </p>
-                    <div class="mt-3">
-                        <strong>From your inventory:</strong>
-                        <ul class="mb-2">
-                            ${randomRecipe.ingredients.from_inventory.map(item => `
-                                <li>${item}</li>
-                            `).join('')}
-                        </ul>
-                        <strong>Additional ingredients needed:</strong>
-                        <ul class="mb-2">
-                            ${randomRecipe.ingredients.additional.map(item => `
-                                <li>${item}</li>
-                            `).join('')}
-                        </ul>
-                    </div>
-                    <div class="recipe-actions mt-3">
-                        <button class="btn btn-like" onclick="likeRecipe(${index})">
-                            <i class="fas fa-thumbs-up"></i> Like
-                        </button>
-                        <button class="btn btn-dislike" onclick="dislikeRecipe(${index})">
-                            <i class="fas fa-thumbs-down"></i> Dislike
-                        </button>
-                        <button class="btn btn-new" onclick="newRecipe(${index})">
-                            <i class="fas fa-sync-alt"></i> New
-                        </button>
-                    </div>
-                </div>
-            `;
-        } else {
-            recipeCard.innerHTML = `
-                <div class="card-body">
-                    <p class="text-muted text-center">No recipes available</p>
-                </div>
-            `;
-        }
-    } catch (error) {
-        console.error('Error:', error);
-        recipeCard.innerHTML = `
-            <div class="card-body">
-                <p class="text-danger text-center">Error loading recipe</p>
-            </div>
-        `;
-    }
-}
-
-// Refresh recipes
-function refreshRecipes() {
-    const container = document.getElementById('recipe-suggestions');
-    container.innerHTML = `
-        <div class="col-12 text-center">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-        </div>
-    `;
-    loadSuggestedRecipes();
-}
-
-// Handle chat form submission
-document.getElementById('chat-form').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    
-    const input = document.getElementById('chat-input');
-    const query = input.value.trim();
-    if (!query) return;
-    
-    // Add user message
-    addChatMessage(query, 'user');
-    input.value = '';
-    
-    // Add loading animation
-    const loadingMessage = document.createElement('div');
-    loadingMessage.className = 'chat-message assistant';
-    loadingMessage.innerHTML = `
-        <div class="loading-dots">
-            <div class="dot"></div>
-            <div class="dot"></div>
-            <div class="dot"></div>
-        </div>
-    `;
-    document.getElementById('chat-messages').appendChild(loadingMessage);
-    
-    try {
-        const response = await fetch('/api/chat_recipes', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ query: query })
-        });
-        
-        // Remove loading animation
-        loadingMessage.remove();
-        
-        const data = await response.json();
-        if (data.recipes) {
-            // Format and display recipes
-            const recipeText = data.recipes.map(recipe => `
-                <div class="recipe-suggestion mb-3">
-                    <h6>${recipe.name}</h6>
-                    <p>${recipe.description}</p>
-                    <p><strong>Cooking time:</strong> ${recipe.cooking_time}</p>
-                    <p><strong>From your inventory:</strong></p>
-                    <ul>
-                        ${recipe.ingredients.from_inventory.map(item => `<li>${item}</li>`).join('')}
-                    </ul>
-                    <p><strong>Additional ingredients needed:</strong></p>
-                    <ul>
-                        ${recipe.ingredients.additional_needed.map(item => `<li>${item}</li>`).join('')}
-                    </ul>
-                    <p><strong>Steps:</strong></p>
-                    <ol>
-                        ${recipe.steps.map(step => `<li>${step}</li>`).join('')}
-                    </ol>
-                </div>
-            `).join('<hr>');
-            
-            addChatMessage(recipeText, 'assistant');
-        } else {
-            addChatMessage('Sorry, I had trouble generating recipes. Please try again.', 'assistant');
-        }
-    } catch (error) {
-        // Remove loading animation
-        loadingMessage.remove();
-        console.error('Error:', error);
-        addChatMessage('Sorry, something went wrong. Please try again.', 'assistant');
-    }
-});
-
-// Update the chat message handling
-function addChatMessage(message, role) {
-    const chatMessages = document.getElementById('chat-messages');
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `chat-message ${role} collapsed`;
-    
-    if (role === 'user') {
-        messageDiv.innerHTML = `
-            <div class="message-content">
-                ${message}
-            </div>
-        `;
-    } else {
-        messageDiv.innerHTML = `
-            <div class="message-content">
-                ${message}
-            </div>
-            <div class="expand-indicator">
-                <i class="fas fa-chevron-down"></i> Click to expand
-            </div>
-        `;
-        
-        messageDiv.addEventListener('click', () => {
-            messageDiv.classList.toggle('collapsed');
-            messageDiv.classList.toggle('expanded');
-            const indicator = messageDiv.querySelector('.expand-indicator');
-            if (messageDiv.classList.contains('expanded')) {
-                indicator.innerHTML = '<i class="fas fa-chevron-up"></i> Click to collapse';
-            } else {
-                indicator.innerHTML = '<i class="fas fa-chevron-down"></i> Click to expand';
-            }
-        });
-    }
-    
-    chatMessages.appendChild(messageDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-// Load inventory on page load
-document.addEventListener('DOMContentLoaded', function() {
-    loadInventory();
-});
-
-// Load inventory items
-async function loadInventory() {
-    try {
-        const response = await fetch('/api/inventory');
-        const data = await response.json();
-        
-        const inventoryList = document.getElementById('inventory-list');
-        if (data.items && data.items.length > 0) {
-            inventoryList.innerHTML = `
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th>Item</th>
-                            <th class="text-center">Qty</th>
-                            <th class="text-center">Unit</th>
-                            <th class="text-end">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.items.map(item => `
-                            <tr>
-                                <td class="text-nowrap">${item.name}</td>
-                                <td class="text-center">${item.quantity}</td>
-                                <td class="text-center">${item.unit}</td>
-                                <td class="text-end">
-                                    <button onclick="deleteItem('${item._id}')" class="btn btn-danger btn-sm">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-        } else {
-            inventoryList.innerHTML = `
-                <div class="text-center text-muted p-4">
-                    <i class="fas fa-box-open fa-3x mb-3"></i>
-                    <p class="mb-0">No items in inventory</p>
-                </div>
-            `;
-        }
-    } catch (error) {
-        console.error('Error loading inventory:', error);
-        inventoryList.innerHTML = `
-            <div class="text-center text-danger p-4">
-                <i class="fas fa-exclamation-circle fa-3x mb-3"></i>
-                <p class="mb-0">Error loading inventory</p>
-            </div>
-        `;
-    }
-}
-
-// Delete an inventory item
-async function deleteItem(itemId) {
-    if (confirm('Are you sure you want to delete this item?')) {
-        try {
-            const response = await fetch(`/api/inventory/${itemId}`, {
-                method: 'DELETE'
-            });
-            
-            if (response.ok) {
-                loadInventory();
-            } else {
-                throw new Error('Failed to delete item');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error deleting item');
-        }
-    }
-}
-
-// Delete all inventory
-async function deleteAllInventory() {
-    if (confirm('Are you sure you want to delete all inventory items?')) {
-        try {
-            const response = await fetch('/delete_all_inventory', {
-                method: 'POST'
-            });
-            
-            if (response.ok) {
-                loadInventory();
-            } else {
-                throw new Error('Failed to delete inventory');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error deleting inventory');
-        }
-    }
-}
-
-// Handle receipt capture
-async function captureReceipt() {
-    try {
-        // Check if we have camera access
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        
-        // Create camera UI
-        const modal = document.createElement('div');
-        modal.className = 'camera-modal';
-        modal.innerHTML = `
-            <div class="camera-container">
-                <video id="camera-preview" autoplay playsinline></video>
-                <div class="camera-controls">
-                    <button class="btn btn-light btn-circle" onclick="closeCamera()">
-                        <i class="fas fa-times"></i>
-                    </button>
-                    <button class="btn btn-primary btn-circle" onclick="takePhoto()">
-                        <i class="fas fa-camera"></i>
-                    </button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-        
-        // Set up video stream
-        const video = document.getElementById('camera-preview');
-        video.srcObject = stream;
-        
-    } catch (error) {
-        console.error('Error accessing camera:', error);
-        if (error.name === 'NotAllowedError') {
-            alert('Please allow camera access to take pictures of receipts. You can change this in your browser settings.');
-        } else {
-            alert('Error accessing camera. Please try uploading a file instead.');
-        }
-    }
-}
-
-function closeCamera() {
-    const modal = document.querySelector('.camera-modal');
-    if (modal) {
-        const video = document.getElementById('camera-preview');
-        const stream = video.srcObject;
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-        }
-        modal.remove();
-    }
-}
-
-// Array of loading messages
-const loadingMessages = [
-    "Scanning receipt items...",
-    "Analyzing ingredients...",
-    "Processing quantities...",
-    "Updating your inventory...",
-    "Almost done..."
-];
-
-let messageIndex = 0;
-let messageInterval;
-
-function showLoadingState() {
-    const uploadSection = document.querySelector('.upload-section:not(#loadingState)');
-    const loadingState = document.getElementById('loadingState');
-    
-    uploadSection.classList.add('d-none');
-    loadingState.classList.remove('d-none');
-    
-    // Start cycling through messages
-    messageIndex = 0;
-    updateLoadingMessage();
-    messageInterval = setInterval(updateLoadingMessage, 3000);
-}
-
-function hideLoadingState() {
-    const uploadSection = document.querySelector('.upload-section:not(#loadingState)');
-    const loadingState = document.getElementById('loadingState');
-    
-    uploadSection.classList.remove('d-none');
-    loadingState.classList.add('d-none');
-    
-    // Clear message interval
-    if (messageInterval) {
-        clearInterval(messageInterval);
-        messageInterval = null;
-    }
-}
-
-function updateLoadingMessage() {
-    const messageElement = document.getElementById('loadingMessage');
-    messageElement.textContent = loadingMessages[messageIndex];
-    messageIndex = (messageIndex + 1) % loadingMessages.length;
-}
-
-function showReceiptLoading() {
-    document.getElementById('receiptLoadingState').style.display = 'flex';
-}
-
-function hideReceiptLoading() {
-    document.getElementById('receiptLoadingState').style.display = 'none';
-}
-
-// Update the file input handlers
-document.getElementById('chooseFile').addEventListener('change', handleFileUpload);
-document.getElementById('takePhoto').addEventListener('change', handleFileUpload);
-
-function handleFileUpload(event) {
-    event.preventDefault();
-    const file = event.target.files[0];
-    if (!file) return;
-
-    showDebug(`Starting receipt upload: ${file.name}`);
-    showReceiptLoading();
-
-    const formData = new FormData();
-    formData.append('receipt', file);
-
-    fetch('/api/upload_receipt', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => {
-        showDebug(`Response status: ${response.status}`);
-        return response.json();
-    })
-    .then(data => {
-        showDebug(`Response data: ${JSON.stringify(data, null, 2)}`);
-        if (data.success) {
-            showReceiptConfirmation(data.items);
-        } else {
-            hideReceiptLoading();
-            showError(data.error || 'Failed to process receipt');
-        }
-    })
-    .catch(error => {
-        hideReceiptLoading();
-        showDebug(`Error: ${error.message}`);
-        showError('Error uploading receipt: ' + error.message);
     });
-}
 
-function showReceiptConfirmation(items) {
-    showDebug(`Received ${items.length} items for confirmation`);
-    hideReceiptLoading();
-    
-    // Store items in a global variable for edit functionality
-    window.receiptItems = items;
-    
-    // Create confirmation modal
-    const modal = document.createElement('div');
-    modal.className = 'modal fade';
-    modal.id = 'receiptConfirmationModal';
-    modal.innerHTML = `
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Confirm Receipt Items</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Quantity</th>
-                                    <th>Unit</th>
-                                    <th>Price</th>
-                                    <th>Select</th>
-                                    <th>Edit</th>
-                                </tr>
-                            </thead>
-                            <tbody id="receiptItemsBody">
-                                ${items.map((item, index) => `
-                                    <tr>
-                                        <td class="item-name">${item.name}</td>
-                                        <td class="item-quantity">${item.quantity}</td>
-                                        <td class="item-unit">${item.unit}</td>
-                                        <td class="item-price">$${item.price.toFixed(2)}</td>
-                                        <td>
-                                            <input type="checkbox" class="form-check-input item-select" checked>
-                                        </td>
-                                        <td>
-                                            <button class="btn btn-link p-0" onclick="editItem(${index})">
-                                                <i class="fas fa-pencil-alt text-primary"></i>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="confirmReceiptItems()">Add Selected Items</button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    const modalInstance = new bootstrap.Modal(modal);
-    modalInstance.show();
-    
-    modal.addEventListener('hidden.bs.modal', function () {
-        document.body.removeChild(modal);
-    });
-}
-
-function confirmReceiptItems() {
-    showDebug('Starting receipt items confirmation');
-    
-    // Get all checked items and their corresponding data from the receiptItems array
-    const selectedItems = Array.from(document.querySelectorAll('.item-select:checked'))
-        .map(checkbox => {
-            const row = checkbox.closest('tr');
-            const index = checkbox.closest('tr').querySelector('.btn-link').getAttribute('onclick').match(/\d+/)[0];
-            return receiptItems[index];
-        });
-    
-    showDebug(`Selected ${selectedItems.length} items: ${JSON.stringify(selectedItems, null, 2)}`);
-
-    if (selectedItems.length === 0) {
-        showError('Please select at least one item');
-        return;
-    }
-
-    fetch('/api/confirm_receipt_items', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ items: selectedItems })
-    })
-    .then(response => {
-        showDebug(`Response status: ${response.status}`);
-        return response.json();
-    })
-    .then(data => {
-        showDebug(`Response data: ${JSON.stringify(data, null, 2)}`);
-        if (data.success) {
-            showSuccess(data.message);
-            // Close the modal
-            const modal = document.getElementById('receiptConfirmationModal');
-            const modalInstance = bootstrap.Modal.getInstance(modal);
-            modalInstance.hide();
-            // Refresh the page to show updated inventory
-            setTimeout(() => window.location.reload(), 1000);
-        } else {
-            showError(data.error || 'Failed to confirm items');
+    // Error handling function
+    function showError(message, error = null) {
+        debugLog('Error occurred', { message, error });
+        const errorDiv = document.getElementById('error-message');
+        if (errorDiv) {
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('d-none');
+            setTimeout(() => {
+                errorDiv.classList.add('d-none');
+            }, 5000);
         }
-    })
-    .catch(error => {
-        showDebug(`Error: ${error.message}`);
-        showError('Error confirming items: ' + error.message);
-    });
-}
-
-function showSuccess(message) {
-    const toast = document.createElement('div');
-    toast.className = 'toast-container position-fixed top-0 end-0 p-3';
-    toast.style.zIndex = '1050';
-    toast.innerHTML = `
-        <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
-            <div class="toast-header bg-success text-white">
-                <strong class="me-auto">Success</strong>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-            </div>
-            <div class="toast-body">
-                ${message}
-            </div>
-        </div>
-    `;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-}
-
-function showError(message) {
-    showDebug(`Error: ${message}`);
-    const errorDiv = document.getElementById('error-message');
-    if (errorDiv) {
-        errorDiv.textContent = message;
-        errorDiv.style.display = 'block';
-        setTimeout(() => {
-            errorDiv.style.display = 'none';
-        }, 5000);
-    } else {
-        console.error('Error message div not found:', message);
+        console.error(message, error);
     }
-}
 
-function showDebug(message) {
-    const debugPanel = document.getElementById('debugPanel');
-    const debugOutput = document.getElementById('debugOutput');
-    debugOutput.textContent += message + '\n';
-    debugPanel.style.display = 'block';
-    debugOutput.scrollTop = debugOutput.scrollHeight;
-}
-
-function showReceiptItems(items) {
-    const tbody = document.getElementById('receiptItemsBody');
-    tbody.innerHTML = '';
-    
-    items.forEach((item, index) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td class="item-name">${item.name}</td>
-            <td class="item-quantity">${item.quantity}</td>
-            <td class="item-unit">${item.unit}</td>
-            <td class="item-price">$${item.price.toFixed(2)}</td>
-            <td>
-                <input type="checkbox" class="form-check-input" checked data-index="${index}">
-            </td>
-            <td>
-                <button class="btn btn-link p-0" onclick="editItem(${index})">
-                    <i class="fas fa-pencil-alt text-primary"></i>
-                </button>
-            </td>
+    // Success message function
+    function showSuccess(message) {
+        debugLog('Success', { message });
+        const toast = document.createElement('div');
+        toast.className = 'toast-container position-fixed top-0 end-0 p-3';
+        toast.style.zIndex = '1050';
+        toast.innerHTML = `
+            <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="toast-header bg-success text-white">
+                    <strong class="me-auto">Success</strong>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+                </div>
+                <div class="toast-body">
+                    ${message}
+                </div>
+            </div>
         `;
-        tbody.appendChild(tr);
-    });
-    
-    $('#confirmReceiptModal').modal('show');
-}
-
-function editItem(index) {
-    const item = receiptItems[index];
-    
-    // Create edit form HTML
-    const editForm = `
-        <div class="edit-form">
-            <div class="form-group mb-2">
-                <label>Name:</label>
-                <input type="text" class="form-control" id="edit-name" value="${item.name}">
-            </div>
-            <div class="form-group mb-2">
-                <label>Quantity:</label>
-                <input type="number" class="form-control" id="edit-quantity" value="${item.quantity}" step="0.01">
-            </div>
-            <div class="form-group mb-2">
-                <label>Unit:</label>
-                <input type="text" class="form-control" id="edit-unit" value="${item.unit}">
-            </div>
-            <div class="form-group mb-2">
-                <label>Price:</label>
-                <input type="number" class="form-control" id="edit-price" value="${item.price}" step="0.01">
-            </div>
-            <div class="d-flex justify-content-end gap-2">
-                <button class="btn btn-secondary" onclick="cancelEdit(${index})">Cancel</button>
-                <button class="btn btn-primary" onclick="saveEdit(${index})">Save</button>
-            </div>
-        </div>
-    `;
-    
-    // Replace the row content with the edit form
-    const row = document.querySelector(`#receiptItemsBody tr:nth-child(${index + 1})`);
-    const originalContent = row.innerHTML;
-    row.innerHTML = `<td colspan="6">${editForm}</td>`;
-    row.dataset.originalContent = originalContent;
-}
-
-function cancelEdit(index) {
-    const row = document.querySelector(`#receiptItemsBody tr:nth-child(${index + 1})`);
-    row.innerHTML = row.dataset.originalContent;
-}
-
-function saveEdit(index) {
-    const name = document.getElementById('edit-name').value;
-    const quantity = parseFloat(document.getElementById('edit-quantity').value);
-    const unit = document.getElementById('edit-unit').value;
-    const price = parseFloat(document.getElementById('edit-price').value);
-    
-    if (!name || isNaN(quantity) || !unit || isNaN(price)) {
-        showError('Please fill in all fields correctly');
-        return;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
     }
-    
-    // Update the item in the receiptItems array
-    receiptItems[index] = {
-        name: name,
-        quantity: quantity,
-        unit: unit,
-        price: price
-    };
-    
-    // Refresh the table
-    showReceiptItems(receiptItems);
-}
 </script>
+
+<style>
+    /* Fix scrolling issues */
+    body {
+        overflow-y: auto;
+        height: 100vh;
+    }
+    
+    .container {
+        max-height: 100vh;
+        overflow-y: auto;
+        padding-bottom: 60px; /* Space for debug button */
+    }
+    
+    .debug-panel {
+        position: fixed;
+        bottom: 50px;
+        right: 10px;
+        width: 300px;
+        max-height: 400px;
+        background: rgba(0, 0, 0, 0.8);
+        color: #fff;
+        padding: 10px;
+        border-radius: 5px;
+        z-index: 1000;
+    }
+    
+    .debug-content {
+        max-height: 350px;
+        overflow-y: auto;
+    }
+    
+    #debugOutput {
+        margin: 0;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        font-family: monospace;
+        font-size: 12px;
+    }
+    
+    /* Ensure tables don't overflow */
+    .table-responsive {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    
+    /* Fix modal scrolling */
+    .modal {
+        overflow-y: auto !important;
+    }
+    
+    .modal-dialog {
+        margin: 1.75rem auto;
+        max-height: calc(100vh - 3.5rem);
+    }
+    
+    .modal-content {
+        max-height: calc(100vh - 3.5rem);
+    }
+    
+    .modal-body {
+        overflow-y: auto;
+    }
+</style>
 {% endblock %} 

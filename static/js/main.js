@@ -1,7 +1,14 @@
 // Receipt upload handling
 async function uploadReceipt(file) {
+    console.log('Starting receipt upload process...');
+    console.log('File details:', {
+        name: file.name,
+        type: file.type,
+        size: file.size
+    });
+
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('receipt', file);
 
     // Show loading state
     const uploadSection = document.querySelector('.upload-section');
@@ -16,32 +23,37 @@ async function uploadReceipt(file) {
     `;
 
     try {
-        console.log('Uploading file:', file.name); // Debug log
-        const response = await fetch('/api/analyze-receipt', {
+        console.log('Sending request to /api/upload_receipt...');
+        const response = await fetch('/api/upload_receipt', {
             method: 'POST',
-            body: formData,
-            // Add these headers to ensure proper file upload
-            headers: {
-                // Don't set Content-Type here, let the browser set it with the boundary
-                'Accept': 'application/json'
-            }
+            body: formData
+        });
+
+        console.log('Response received:', {
+            status: response.status,
+            statusText: response.statusText,
+            headers: Object.fromEntries(response.headers)
         });
 
         if (!response.ok) {
             const errorData = await response.json();
+            console.error('Error response:', errorData);
             throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
         }
 
         const data = await response.json();
+        console.log('Response data:', data);
         
         if (data.success) {
+            console.log('Successfully processed receipt. Items:', data.items);
             // Display the extracted items
             displayExtractedItems(data.items);
         } else {
+            console.error('Failed to process receipt:', data.error);
             throw new Error(data.error || 'Failed to process receipt');
         }
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error in uploadReceipt:', error);
         alert('Error uploading receipt: ' + error.message);
     } finally {
         // Restore original upload section content
@@ -163,22 +175,30 @@ async function addAllToInventory(items) {
 // Add an item to inventory
 async function addToInventory(item, shouldRefresh = true) {
     try {
-        const response = await fetch('/add_item', {
+        console.log('Attempting to add item:', item); // Debug log
+        const response = await fetch('/api/add_item', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(item)
+            body: JSON.stringify(item)  // Send the item directly, not wrapped in an items array
         });
 
+        console.log('Response status:', response.status); // Debug log
+        console.log('Response headers:', Object.fromEntries(response.headers)); // Debug log
+
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errorText = await response.text();
+            console.error('Error response:', errorText); // Debug log
+            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
         }
 
         const result = await response.json();
+        console.log('Success response:', result); // Debug log
         
         // Only refresh the inventory if shouldRefresh is true
         if (shouldRefresh) {
+            console.log('Refreshing inventory...'); // Debug log
             await loadInventory();
             
             // Remove the individual row from the extracted items table
@@ -194,9 +214,72 @@ async function addToInventory(item, shouldRefresh = true) {
             }
         }
     } catch (error) {
-        console.error('Error:', error);
-        alert('Error adding item to inventory');
+        console.error('Detailed error:', error); // Debug log
+        alert('Error adding item to inventory: ' + error.message);
         throw error; // Re-throw the error so addAllToInventory can catch it
+    }
+}
+
+// Function to handle adding item from the modal
+async function addItemToInventory() {
+    const name = document.getElementById('itemName').value;
+    const quantity = parseFloat(document.getElementById('itemQuantity').value);
+    const unit = document.getElementById('itemUnit').value;
+    const price = parseFloat(document.getElementById('itemPrice').value);
+
+    console.log('Form values:', { name, quantity, unit, price }); // Debug log
+
+    if (!name || !quantity || !unit || !price) {
+        console.log('Missing required fields:', { name, quantity, unit, price }); // Debug log
+        alert('Please fill in all fields');
+        return;
+    }
+
+    const item = {
+        name,
+        quantity,
+        unit,
+        price
+    };
+
+    try {
+        console.log('Submitting item:', item); // Debug log
+        const response = await fetch('/api/add_item', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(item)  // Send the item directly, not wrapped in an items array
+        });
+
+        console.log('Response status:', response.status); // Debug log
+        
+        const data = await response.json();
+        console.log('Response data:', data); // Debug log
+        
+        if (data.success) {
+            // Close the modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addItemModal'));
+            if (modal) {
+                modal.hide();
+                console.log('Modal closed'); // Debug log
+            } else {
+                console.error('Modal instance not found'); // Debug log
+            }
+            
+            // Clear the form
+            document.getElementById('addItemForm').reset();
+            console.log('Form reset'); // Debug log
+            
+            // Refresh the inventory display
+            await loadInventory();
+            console.log('Inventory refreshed'); // Debug log
+        } else {
+            alert(data.error || 'Failed to add item');
+        }
+    } catch (error) {
+        console.error('Error in addItemToInventory:', error); // Debug log
+        alert('Error adding item: ' + error.message);
     }
 }
 
@@ -239,4 +322,75 @@ document.addEventListener('DOMContentLoaded', function() {
             uploadReceipt(file);
         }
     });
-}); 
+});
+
+// Load inventory items
+async function loadInventory() {
+    console.log('Loading inventory...'); // Debug log
+    try {
+        const response = await fetch('/api/inventory');
+        console.log('Inventory response status:', response.status); // Debug log
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('Inventory data:', data); // Debug log
+        
+        const inventoryList = document.getElementById('inventory-list');
+        if (!inventoryList) {
+            console.error('Inventory list element not found');
+            return;
+        }
+
+        if (data.items && data.items.length > 0) {
+            inventoryList.innerHTML = `
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th class="text-center">Qty</th>
+                            <th class="text-center">Unit</th>
+                            <th class="text-end">Price</th>
+                            <th class="text-end">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.items.map(item => `
+                            <tr>
+                                <td class="text-nowrap">${item.name}</td>
+                                <td class="text-center">${item.quantity}</td>
+                                <td class="text-center">${item.unit}</td>
+                                <td class="text-end">$${item.price.toFixed(2)}</td>
+                                <td class="text-end">
+                                    <button onclick="deleteItem('${item._id}')" class="btn btn-danger btn-sm">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        } else {
+            inventoryList.innerHTML = `
+                <div class="text-center text-muted p-4">
+                    <i class="fas fa-box-open fa-3x mb-3"></i>
+                    <p class="mb-0">No items in inventory</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading inventory:', error);
+        const inventoryList = document.getElementById('inventory-list');
+        if (inventoryList) {
+            inventoryList.innerHTML = `
+                <div class="text-center text-danger p-4">
+                    <i class="fas fa-exclamation-circle fa-3x mb-3"></i>
+                    <p class="mb-0">Error loading inventory</p>
+                </div>
+            `;
+        }
+    }
+} 
